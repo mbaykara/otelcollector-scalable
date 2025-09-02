@@ -8,7 +8,7 @@ This repository contains OpenTelemetry Collector configurations for a comprehens
 
 ```mermaid
 graph TD
-    A[Applications] -->|traces| B[trace-loadbalance-collector]
+    A[Applications] -->|traces| B[collector-receiver-lb]
     B -->|traces| C[collector-tailsampling]
     B -->|traces| D[collector-servicegraph] 
     B -->|traces| E[collector-spanmetrics]
