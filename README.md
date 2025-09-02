@@ -144,28 +144,6 @@ kubectl port-forward -n o11y svc/collector-receiver-lb-collector-monitoring 8888
 
 Health checks available on port 13133 for each collector.
 
-## Troubleshooting
-
-### Check Collector Status
-```bash
-kubectl get opentelemetrycollectors -n o11y
-kubectl get pods -n o11y | grep collector
-```
-
-### View Logs
-```bash
-kubectl logs -l app.kubernetes.io/name=collector-receiver-lb-collector -n o11y
-kubectl logs -l app.kubernetes.io/name=collector-tailsampling -n o11y
-```
-
-### Test Trace Flow
-```bash
-# Send test trace
-curl -X POST http://collector-receiver-lb-collector.o11y:4318/v1/traces \
-  -H "Content-Type: application/json" \
-  -d '{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"test-service"}}]},"scopeSpans":[{"spans":[{"traceId":"12345678901234567890123456789012","spanId":"1234567890123456","name":"test-span","kind":1,"startTimeUnixNano":"1693648800000000000","endTimeUnixNano":"1693648800100000000","status":{"code":1}}]}]}]}'
-```
-
 ## Architecture Benefits
 
 - **Scalability**: Dedicated collectors for different data types
