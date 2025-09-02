@@ -1,0 +1,2 @@
+# otelcollector-operator-scalable
+OpenTelemetryCollector scalable architecture
