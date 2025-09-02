@@ -85,10 +85,23 @@ graph TD
 ## Deployment
 
 ### Prerequisites
+
+##### Grafana Cloud creds
+
+```bash
+apiVersion: v1
+data:
+  stack_password: YOUR_CLOUD_ACCESS_POLICY_PASSWORD
+  stack_username: USERNAME
+kind: Secret
+metadata:
+  name: dv-grafanacloud-auth
+
+```
+
 ```bash
 # Apply RBAC for cluster monitoring
 kubectl apply -f rbac-k8s-cluster.yaml
-
 # Deploy kube-state-metrics (required for cluster metrics)
 kubectl apply -f kube-state-metrics.yaml
 ```
@@ -96,12 +109,7 @@ kubectl apply -f kube-state-metrics.yaml
 ### Deploy Collectors
 ```bash
 # Deploy in order:
-kubectl apply -f collector-tailsampling.yaml
-kubectl apply -f collector-spanmetrics.yaml  
-kubectl apply -f collector-servicegraph.yaml
-kubectl apply -f collector-k8s-cluster.yaml
-kubectl apply -f collector-k8s-nodes.yaml
-kubectl apply -f collector-receiver.yaml  # Deploy last
+kubectl apply -f application/*
 ```
 
 ## Configuration
