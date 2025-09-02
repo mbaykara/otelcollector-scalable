@@ -1,0 +1,172 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: collector-k8s-nodes
+  namespace: o11y
+spec:
+  image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.133.0
+  config:
+    receivers:
+      # Kubelet stats for node/pod/container metrics
+      kubeletstats:
+        collection_interval: 20s
+        auth_type: serviceAccount
+        endpoint: ${env:K8S_NODE_NAME}:10250
+        insecure_skip_verify: true
+        extra_metadata_labels:
+          - container.id
+          - k8s.volume.type
+        metric_groups:
+          - container
+          - pod
+          - node
+          - volume
+      
+      # Prometheus scraping for node-exporter on this node
+      prometheus:
+        config:
+          scrape_configs:
+          - job_name: 'integrations/node_exporter'
+            static_configs:
+            - targets: ['localhost:9100']
+            metric_relabel_configs:
+            - source_labels: [__name__]
+              action: keep
+              regex: {{NODE_EXPORTER_REGEX}}
+    
+    processors:
+      # Memory limiter
+      memory_limiter:
+        limit_mib: 512
+        check_interval: 1s
+        spike_limit_mib: 128
+      
+      # Filter processor for kubeletstats metrics
+      filter/kubeletstats_allowlist:
+        metrics:
+          include:
+            match_type: regexp
+            metric_names:
+            - "{{KUBELETSTATS_REGEX}}"
+      
+      # Resource processor to add node info
+      resource:
+        attributes:
+        - key: cluster.name
+          value: ${env:CLUSTER_NAME}
+          action: upsert
+        - key: otel_collector_environment
+          value: ${env:COLLECTOR_ENVIRONMENT}
+          action: upsert
+        - key: collector.name
+          value: "collector-k8s-nodes"
+          action: upsert
+        - key: collector.type
+          value: "k8s-nodes"
+          action: upsert
+        - key: k8s.node.name
+          value: ${env:K8S_NODE_NAME}
+          action: upsert
+      
+      # Batch processor
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+        send_batch_max_size: 2048
+    
+    exporters:
+      # Grafana Cloud OTLP endpoint
+      otlphttp/grafanacloud:
+        endpoint: ${env:GRAFANA_OTLP_ENDPOINT}
+        auth:
+          authenticator: basicauth/grafanacloud
+        compression: gzip
+        timeout: 30s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+        sending_queue:
+          enabled: true
+          num_consumers: 5
+          queue_size: 1000
+        headers:
+          User-Agent: "otel-collector-k8s-nodes/0.133.0"
+    
+    extensions:
+      # Basic auth for Grafana Cloud
+      basicauth/grafanacloud:
+        client_auth:
+          username: ${env:GRAFANA_USERNAME}
+          password: ${env:GRAFANA_PASSWORD}
+      
+      # Health check
+      health_check:
+        endpoint: 0.0.0.0:13133
+    
+    service:
+      extensions: [basicauth/grafanacloud, health_check]
+      pipelines:
+        metrics:
+          receivers: [kubeletstats, prometheus]
+          processors: [memory_limiter, filter/kubeletstats_allowlist, resource, batch]
+          exporters: [otlphttp/grafanacloud]
+      telemetry:
+        logs:
+          level: INFO
+        metrics:
+          level: detailed
+
+  # Deploy as DaemonSet for node-level metrics
+  mode: daemonset
+  
+  # Service account with cluster permissions
+  serviceAccount: otel-k8s-cluster
+  
+  # Mount allowlist ConfigMaps
+  volumes:
+  - name: allowlists
+    configMap:
+      name: otel-allowlists
+  - name: proc
+    hostPath:
+      path: /proc
+  - name: sys
+    hostPath:
+      path: /sys
+  
+  volumeMounts:
+  - name: allowlists
+    mountPath: /etc/allowlists
+    readOnly: true
+  - name: proc
+    mountPath: /host/proc
+    readOnly: true
+  - name: sys
+    mountPath: /host/sys
+    readOnly: true
+  
+  env:
+  - name: K8S_NODE_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
+  - name: CLUSTER_NAME
+    value: monitoring-aks-01
+  - name: GOMEMLIMIT
+    value: 450MiB
+  - name: COLLECTOR_ENVIRONMENT
+    value: "production"
+  - name: GRAFANA_OTLP_ENDPOINT
+    value: "https://otlp-gateway-prod-eu-west-3.grafana.net/otlp"
+  - name: GRAFANA_USERNAME
+    valueFrom:
+      secretKeyRef:
+        key: stack_username
+        name: dv-grafanacloud-auth
+  - name: GRAFANA_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        key: stack_password
+        name: dv-grafanacloud-auth

@@ -1,0 +1,212 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: collector-k8s-cluster
+  namespace: o11y
+spec:
+  image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.133.0
+  config:
+    receivers:
+      # Kubernetes cluster metrics (generates k8s.* names)
+      k8s_cluster:
+        auth_type: serviceAccount
+        collection_interval: 10s
+        node_conditions_to_report:
+          - Ready
+          - MemoryPressure
+          - DiskPressure
+          - PIDPressure
+        distribution: kubernetes
+        allocatable_types_to_report:
+          - cpu
+          - memory
+          - ephemeral-storage
+      
+      # Prometheus metrics following Grafana Cloud convention
+      prometheus:
+        config:
+          scrape_configs:
+          # All Nodes, scraping their cAdvisor endpoint (integrations/kubernetes/cadvisor)
+          - job_name: 'integrations/kubernetes/cadvisor'
+            scheme: https
+            tls_config:
+              insecure_skip_verify: true
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+            kubernetes_sd_configs:
+            - role: node
+            relabel_configs:
+            - action: labelmap
+              regex: __meta_kubernetes_node_label_(.+)
+            - target_label: __address__
+              replacement: kubernetes.default.svc:443
+            - source_labels: [__meta_kubernetes_node_name]
+              regex: (.+)
+              target_label: __metrics_path__
+              replacement: /api/v1/nodes/$${1}/proxy/metrics/cadvisor
+          
+          # All Nodes, scraping their Kubelet metrics endpoint (integrations/kubernetes/kubelet)
+          - job_name: 'integrations/kubernetes/kubelet'
+            scheme: https
+            tls_config:
+              insecure_skip_verify: true
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+            kubernetes_sd_configs:
+            - role: node
+            relabel_configs:
+            - action: labelmap
+              regex: __meta_kubernetes_node_label_(.+)
+            - target_label: __address__
+              replacement: kubernetes.default.svc:443
+            - source_labels: [__meta_kubernetes_node_name]
+              regex: (.+)
+              target_label: __metrics_path__
+              replacement: /api/v1/nodes/$${1}/proxy/metrics
+            metric_relabel_configs:
+            - source_labels: [__name__]
+              action: keep
+              regex: {{KUBELET_REGEX}}
+          
+          # All Pods with kube-state-metrics label (integrations/kubernetes/kube-state-metrics)
+          - job_name: 'integrations/kubernetes/kube-state-metrics'
+            kubernetes_sd_configs:
+            - role: service
+            relabel_configs:
+            - source_labels: [__meta_kubernetes_service_name]
+              action: keep
+              regex: kube-state-metrics
+            - source_labels: [__meta_kubernetes_service_port_name]
+              action: keep
+              regex: http-metrics
+            metric_relabel_configs:
+            - source_labels: [__name__]
+              action: keep
+              regex: {{KUBE_STATE_METRICS_REGEX}}
+          
+          # Node exporter metrics are handled by collector-k8s-nodes DaemonSet
+          
+          # All collectors for self-monitoring
+          - job_name: 'integrations/otel-collector'
+            kubernetes_sd_configs:
+            - role: pod
+            relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+              action: keep
+              regex: opentelemetry-collector
+            - source_labels: [__meta_kubernetes_pod_container_port_name]
+              action: keep
+              regex: monitoring
+            metric_relabel_configs:
+            - source_labels: [__name__]
+              action: keep
+              regex: {{OTEL_COLLECTOR_REGEX}}
+
+    processors:
+      # Recommended memory limiter configuration for production
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+
+      # Add useful resource attributes
+      resource:
+        attributes:
+        - key: cluster
+          value: ${env:CLUSTER_NAME}
+          action: insert
+        - key: k8s.cluster.name
+          value: ${env:CLUSTER_NAME}
+          action: upsert
+        - key: collector.name
+          value: collector-k8s-cluster
+          action: insert
+        - key: collector.version
+          value: 0.133.0
+          action: insert
+
+      # Set standard labels following Grafana Cloud conventions
+      transform/set_standard_labels:
+        metric_statements:
+        - context: resource
+          statements:
+          - set(attributes["service.name"], "kubernetes") where attributes["service.name"] == nil
+          - set(attributes["service.namespace"], attributes["k8s.namespace.name"]) where attributes["k8s.namespace.name"] != nil
+          - set(attributes["service.instance.id"], attributes["k8s.pod.uid"]) where attributes["k8s.pod.uid"] != nil
+
+      # Batch processor configuration
+      batch:
+        send_batch_size: 1000
+        timeout: 10s
+        send_batch_max_size: 1500
+
+    exporters:
+      # Primary Grafana Cloud export
+      otlphttp/grafanacloud:
+        endpoint: ${env:GRAFANA_OTLP_ENDPOINT}
+        auth:
+          authenticator: basicauth/grafanacloud
+
+    extensions:
+      # Basic auth for Grafana Cloud
+      basicauth/grafanacloud:
+        client_auth:
+          username: ${env:GRAFANA_USERNAME}
+          password: ${env:GRAFANA_PASSWORD}
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    service:
+      extensions: [basicauth/grafanacloud, health_check]
+      pipelines:
+        metrics:
+          receivers: [k8s_cluster, prometheus]
+          processors: [memory_limiter, resource, transform/set_standard_labels, batch]
+          exporters: [otlphttp/grafanacloud]
+      telemetry:
+        logs:
+          level: DEBUG
+        metrics:
+          level: detailed
+          readers:
+          - pull:
+              exporter:
+                prometheus:
+                  host: 0.0.0.0
+                  port: 8888
+
+  # Deploy as StatefulSet for cluster-level metrics
+  mode: statefulset
+  replicas: 1
+  
+  # Service account with cluster permissions
+  serviceAccount: otel-k8s-cluster
+  
+  # Mount allowlist ConfigMaps
+  volumes:
+  - name: allowlists
+    configMap:
+      name: otel-allowlists
+  
+  volumeMounts:
+  - name: allowlists
+    mountPath: /etc/allowlists
+    readOnly: true
+  
+  env:
+  - name: CLUSTER_NAME
+    value: monitoring-aks-01
+  - name: GOMEMLIMIT
+    value: 900MiB
+  - name: COLLECTOR_ENVIRONMENT
+    value: "production"
+  - name: GRAFANA_OTLP_ENDPOINT
+    value: "https://otlp-gateway-prod-eu-west-3.grafana.net/otlp"
+  - name: GRAFANA_USERNAME
+    valueFrom:
+      secretKeyRef:
+        key: stack_username
+        name: dv-grafanacloud-auth
+  - name: GRAFANA_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        key: stack_password
+        name: dv-grafanacloud-auth
