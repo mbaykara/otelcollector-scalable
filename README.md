@@ -86,6 +86,12 @@ graph TD
 
 ### Prerequisites
 
+#### [Opentelemetry Operator](https://github.com/open-telemetry/opentelemetry-operator)
+
+```bash
+kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
+```
+For GitOps approach see the other installation [options](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator)
 ##### Grafana Cloud creds
 
 ```bash
