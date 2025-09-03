@@ -1,5 +1,6 @@
 allowlist:
   - node_cpu_seconds_total
+  - node_exporter_build_info
   - node_load1
   - node_load5
   - node_load15
