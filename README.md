@@ -8,16 +8,17 @@ This repository contains OpenTelemetry Collector configurations for a comprehens
 
 ```mermaid
 graph TD
-    A[Applications] -->|traces|metrics|logs| B[collector-receiver-lb]
-    B -->|metrics|logs | C[collector-metrics-otlp-logs]
+    A[Applications] -->|traces,metrics,logs| B[collector-receiver-lb]
+    B -->|metrics,logs | K[collector-metrics-otlp-logs]
+    K --> |native metrics,logs|F[Grafana Cloud]
     B -->|traces| C[collector-tailsampling]
     B -->|traces| D[collector-servicegraph] 
     B -->|traces| E[collector-spanmetrics]
     C -->|sampled traces| F[Grafana Cloud]
     D -->|service graph metrics| F
     E -->|span metrics| F
-    G[collector-k8s-cluster] -->|cluster metrics| F
-    H[collector-k8s-nodes] -->|node metrics| F
+    G[collector-cluster-metrics] -->|cluster metrics| F
+    H[collector-node-metrics] -->|node metrics| F
 ```
 
 ### Collector Components
