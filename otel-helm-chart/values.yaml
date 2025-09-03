@@ -43,7 +43,7 @@ collectors:
     enabled: true
     type: application
     replicas: 2
-    mode: deployment
+    mode: statefulset
     serviceAccount: otel-collector
     image: 
       repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
