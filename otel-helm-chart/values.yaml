@@ -1,0 +1,201 @@
+# Default values for OpenTelemetry Collector Stack
+
+## Global settings
+global:
+  clusterName: ""
+  environment: "production"
+  namespace: o11y
+
+## Grafana Cloud Configuration
+grafanaCloud:
+  endpoint: ""
+  authSecretName: ""
+  usernameKey: ""
+  passwordKey: ""
+  createSecret: false
+
+## Collector Definitions
+collectors:
+  # Application Observability Collectors
+  receiver:
+    enabled: true
+    type: application
+    replicas: 1
+    mode: deployment
+    serviceAccount: otel-collector
+    image: 
+      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+      tag: "0.133.0"
+    resources:
+      limits:
+        memory: 2Gi
+        cpu: 1
+      requests:
+        memory: 1Gi
+        cpu: 500m
+    config:
+      workloadName: "receiver"
+      receivers: ["otlp", "filelog"]
+      processors: ["memory_limiter", "k8sattributes", "resource", "batch"]
+      exporters: ["loadbalancing", "loadbalancing/spanmetrics", "loadbalancing/servicegraph"]
+
+  tailsampling:
+    enabled: true
+    type: application
+    replicas: 2
+    mode: deployment
+    serviceAccount: otel-collector
+    image: 
+      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+      tag: "0.133.0"
+    resources:
+      limits:
+        memory: 2Gi
+        cpu: 1
+      requests:
+        memory: 1Gi  
+        cpu: 500m
+    config:
+      workloadName: "tailsampling"
+      samplingRate: 0.5
+      decisionWait: "10s"
+      receivers: ["otlp"]
+      processors: ["memory_limiter", "resource/add_workload_name", "tail_sampling", "batch"]
+      exporters: ["otlphttp/grafanacloud"]
+
+  spanmetrics:
+    enabled: true
+    type: application
+    replicas: 2
+    mode: deployment
+    serviceAccount: otel-collector
+    image: 
+      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+      tag: "0.133.0"
+    resources:
+      limits:
+        memory: 8Gi
+        cpu: 1
+      requests:
+        memory: 4Gi
+        cpu: 500m
+    config:
+      workloadName: "spanmetrics"
+      receivers: ["otlp"]
+      processors: ["memory_limiter", "resource/add_collector_info", "filter/spanmetrics_only", "batch"]
+      exporters: ["otlphttp/grafanacloud"]
+
+  servicegraph:
+    enabled: true
+    type: application
+    replicas: 2
+    mode: deployment
+    serviceAccount: otel-collector
+    image: 
+      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+      tag: "0.133.0"
+    resources:
+      limits:
+        memory: 8Gi
+        cpu: 1
+      requests:
+        memory: 4Gi
+        cpu: 500m
+    config:
+      workloadName: "servicegraph"
+      flushInterval: "60s"
+      receivers: ["otlp"]
+      processors: ["memory_limiter", "resource/add_collector_info", "batch"]
+      exporters: ["otlphttp/grafanacloud", "debug"]
+
+  # Infrastructure Observability Collectors
+  cluster-metrics:
+    enabled: true
+    type: infrastructure
+    replicas: 1
+    mode: statefulset
+    serviceAccount: otel-collector
+    image: 
+      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+      tag: "0.133.0"
+    resources:
+      limits:
+        memory: 2Gi
+        cpu: 1
+      requests:
+        memory: 1Gi
+        cpu: 500m
+    config:
+      workloadName: "cluster"
+      receivers: ["k8s_cluster", "prometheus"]
+      processors: ["memory_limiter", "resource", "batch"]
+      exporters: ["otlphttp/grafanacloud"]
+
+  node-metrics:
+    enabled: true
+    type: infrastructure
+    replicas: 1
+    mode: daemonset
+    serviceAccount: otel-collector
+    image: 
+      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+      tag: "0.133.0"
+    resources:
+      limits:
+        memory: 1Gi
+        cpu: 500m
+      requests:
+        memory: 512Mi
+        cpu: 250m
+    config:
+      workloadName: "nodes"
+      receivers: ["kubeletstats", "prometheus"]
+      processors: ["memory_limiter", "filter/kubeletstats_allowlist", "resource", "batch"]
+      exporters: ["otlphttp/grafanacloud"]
+
+## Allowlists
+allowlists:
+  cadvisor:
+    enabled: true
+  kubelet:
+    enabled: true
+  kubeStateMetrics:
+    enabled: true
+  nodeExporter:
+    enabled: true
+  kubeletstats:
+    enabled: true
+  otelCollector:
+    enabled: true
+
+## Dependencies
+kubeStateMetrics:
+  enabled: true
+  fullnameOverride: "kube-state-metrics"
+
+nodeExporter:
+  enabled: true
+  fullnameOverride: "node-exporter"
+  service:
+    port: 9100
+    portName: metrics
+  hostNetwork: true
+  hostPID: true
+  
+## RBAC
+rbac:
+  create: true
+  
+## Service Account
+serviceAccount:
+  create: true
+  name: otel-collector
+
+## Histogram Configuration
+histograms:
+  buckets: [0.1, 0.5, 1, 2, 5]
+
+## Common Configuration
+imagePullSecrets: []
+commonLabels: {}
+commonAnnotations: {}

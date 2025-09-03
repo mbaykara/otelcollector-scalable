@@ -1,0 +1,31 @@
+{{- $enabledCollectors := list }}
+{{- range $name, $collector := .Values.collectors }}
+  {{- if $collector.enabled }}
+    {{- $enabledCollectors = append $enabledCollectors $name }}
+  {{- end }}
+{{- end }}
+
+🎉 OpenTelemetry Collector Stack successfully deployed!
+
+DEPLOYED COMPONENTS:
+{{- range $enabledCollectors | sortAlpha }}
+  {{- $collector := index $.Values.collectors . }}
+  ✅ {{ . | title }} Collector: {{ $.Release.Name }}-{{ . }} ({{ $collector.mode }})
+{{- end }}
+
+🔌 APPLICATION ENDPOINTS:
+
+{{- if index .Values.collectors "receiver" "enabled" }}
+  OTLP gRPC Endpoint:
+    FQDN: {{ .Release.Name }}-receiver-collector.{{ .Values.global.namespace }}.svc.cluster.local:4317
+    
+  OTLP HTTP Endpoint:  
+    FQDN: {{ .Release.Name }}-receiver-collector.{{ .Values.global.namespace }}.svc.cluster.local:4318
+
+  Example usage in applications:
+    export OTEL_EXPORTER_OTLP_ENDPOINT="http://{{ .Release.Name }}-receiver-collector.{{ .Values.global.namespace }}.svc.cluster.local:4318"
+    export OTEL_EXPORTER_OTLP_HEADERS="Content-Type=application/json"
+{{- else }}
+  ⚠️  Receiver collector is disabled - no application endpoints available
+{{- end }}
+
