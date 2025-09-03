@@ -144,6 +144,7 @@ spec:
         histogram:
           explicit:
             buckets: {{ $.Values.histograms.buckets | toJson }}
+          unit: s
         exemplars:
           enabled: true
         exclude_dimensions: ['status.code']
