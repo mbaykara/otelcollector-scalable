@@ -1,5 +1,7 @@
 {{- range $name, $collector := .Values.collectors }}
 {{- if $collector.enabled }}
+{{- /* Merge collectorsCommon with individual collector settings */ -}}
+{{- $mergedCollector := deepCopy $.Values.collectorsCommon | mustMergeOverwrite (deepCopy $collector) }}
 ---
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
@@ -9,19 +11,21 @@ metadata:
   labels:
     {{- include "otel-collectors.labels" $ | nindent 4 }}
     component: {{ $name }}
-    type: {{ $collector.type }}
+    type: {{ $mergedCollector.type }}
 spec:
-  image: {{ $collector.image.repository }}:{{ $collector.image.tag }}
-  {{- if gt ($collector.replicas | int) 1 }}
-  replicas: {{ $collector.replicas }}
+  image: {{ $mergedCollector.image.repository }}:{{ $mergedCollector.image.tag }}
+  {{- if gt ($mergedCollector.replicas | int) 1 }}
+  replicas: {{ $mergedCollector.replicas }}
   {{- end }}
-  
   resources:
-    {{- toYaml $collector.resources | nindent 4 }}
-  
+    {{- toYaml $mergedCollector.resources | nindent 4 }}
+  {{- if has "prometheus" $mergedCollector.config.receivers }}
+  targetAllocator:
+    enabled: true
+  {{- end }}
   config:
     receivers:
-      {{- if has "otlp" $collector.config.receivers }}
+      {{- if has "otlp" $mergedCollector.config.receivers }}
       otlp:
         protocols:
           grpc:
@@ -29,7 +33,7 @@ spec:
           http:
             endpoint: 0.0.0.0:4318
       {{- end }}
-      {{- if has "k8s_cluster" $collector.config.receivers }}
+      {{- if has "k8s_cluster" $mergedCollector.config.receivers }}
       k8s_cluster:
         auth_type: serviceAccount
         collection_interval: 10s
@@ -44,7 +48,7 @@ spec:
           - memory
           - ephemeral-storage
       {{- end }}
-      {{- if has "kubeletstats" $collector.config.receivers }}
+      {{- if has "kubeletstats" $mergedCollector.config.receivers }}
       kubeletstats:
         collection_interval: 20s
         auth_type: serviceAccount
@@ -59,7 +63,7 @@ spec:
           - node
           - volume
       {{- end }}
-      {{- if has "prometheus" $collector.config.receivers }}
+      {{- if has "prometheus" $mergedCollector.config.receivers }}
       prometheus:
         config:
           scrape_configs:
@@ -180,10 +184,10 @@ spec:
           value: {{ $.Values.global.clusterName }}
           action: insert
         - key: workloadName
-          value: {{ $collector.config.workloadName | quote }}
+          value: {{ $mergedCollector.config.workloadName | quote }}
           action: insert
       {{- end }}
-      {{- if has "batch" $collector.config.processors }}
+      {{- if has "batch" $mergedCollector.config.processors }}
       batch:
         send_batch_size: 1000
         timeout: 10s
@@ -198,19 +202,19 @@ spec:
           value: "collector-{{ $name }}"
           action: insert
         - key: workloadName
-          value: {{ $collector.config.workloadName | quote }}
+          value: {{ $mergedCollector.config.workloadName | quote }}
           action: insert
       {{- end }}
       {{- if eq $name "tailsampling" }}
       tail_sampling:
-        decision_wait: {{ $collector.config.decisionWait }}
+        decision_wait: {{ $mergedCollector.config.decisionWait }}
         num_traces: 50000
         expected_new_traces_per_sec: 10
         policies:
           - name: probabilistic-policy
             type: probabilistic
             probabilistic:
-              sampling_percentage: {{ mul $collector.config.samplingRate 100 }}
+              sampling_percentage: {{ mul $mergedCollector.config.samplingRate 100 }}
       {{- end }}
       {{- if eq $name "receiver" }}
       resourcedetection:
@@ -398,9 +402,9 @@ spec:
           exporters: [otlphttp/grafanacloud]
         {{- else }}
         metrics:
-          receivers: {{ $collector.config.receivers | toJson }}
-          processors: {{ $collector.config.processors | toJson }}
-          exporters: {{ $collector.config.exporters | toJson }}
+          receivers: {{ $mergedCollector.config.receivers | toJson }}
+          processors: {{ $mergedCollector.config.processors | toJson }}
+          exporters: {{ $mergedCollector.config.exporters | toJson }}
         {{- end }}
       telemetry:
         logs:
@@ -411,6 +415,12 @@ spec:
     value: {{ $.Values.global.clusterName }}
   - name: COLLECTOR_ENVIRONMENT
     value: {{ $.Values.global.environment }}
+  {{- if and $mergedCollector.targetAllocator $mergedCollector.targetAllocator.enabled (has "prometheus" $mergedCollector.config.receivers) }}
+  - name: POD_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+  {{- end }}
   {{- if or (eq $name "receiver") (eq $name "node-metrics") }}
   - name: KUBE_NODE_NAME
     valueFrom:
@@ -434,10 +444,10 @@ spec:
         key: {{ $.Values.grafanaCloud.passwordKey }}
         name: {{ $.Values.grafanaCloud.authSecretName }}
 
-  {{- if or $collector.volumeMounts (eq $name "receiver") (eq $name "node-metrics") }}
+  {{- if or $mergedCollector.volumeMounts (eq $name "receiver") (eq $name "node-metrics") }}
   volumeMounts:
-  {{- if $collector.volumeMounts }}
-    {{- toYaml $collector.volumeMounts | nindent 2 }}
+  {{- if $mergedCollector.volumeMounts }}
+    {{- toYaml $mergedCollector.volumeMounts | nindent 2 }}
   {{- end }}
   {{- if eq $name "node-metrics" }}
   - name: proc
@@ -449,10 +459,10 @@ spec:
   {{- end }}
   {{- end }}
     
-  {{- if or $collector.volumes (eq $name "receiver") (eq $name "node-metrics") }}
+  {{- if or $mergedCollector.volumes (eq $name "receiver") (eq $name "node-metrics") }}
   volumes:
-  {{- if $collector.volumes }}
-    {{- toYaml $collector.volumes | nindent 2 }}
+  {{- if $mergedCollector.volumes }}
+    {{- toYaml $mergedCollector.volumes | nindent 2 }}
   {{- end }}
   {{- if eq $name "node-metrics" }}
   - name: proc
@@ -464,7 +474,7 @@ spec:
   {{- end }}
   {{- end }}
 
-  mode: {{ $collector.mode }}
-  serviceAccount: {{ $collector.serviceAccount }}
+  mode: {{ $mergedCollector.mode }}
+  serviceAccount: {{ $mergedCollector.serviceAccount }}
 {{- end }}
 {{- end }}

@@ -14,6 +14,20 @@ grafanaCloud:
   passwordKey: ""
   createSecret: false
 
+## Common Collector Settings (defaults for all collectors)
+collectorsCommon:
+  image:
+    repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+    tag: "0.133.0"
+  resources:
+    limits:
+      memory: 1Gi
+      cpu: 500m
+    requests:
+      memory: 512Mi
+      cpu: 200m
+  serviceAccount: otel-collector
+
 ## Collector Definitions
 collectors:
   # Application Observability Collectors
@@ -22,10 +36,6 @@ collectors:
     type: application
     replicas: 1
     mode: deployment
-    serviceAccount: otel-collector
-    image: 
-      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
-      tag: "0.133.0"
     resources:
       limits:
         memory: 512Mi
@@ -44,17 +54,6 @@ collectors:
     type: application
     replicas: 2
     mode: statefulset
-    serviceAccount: otel-collector
-    image: 
-      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
-      tag: "0.133.0"
-    resources:
-      limits:
-        memory: 1Gi
-        cpu: 500m
-      requests:
-        memory: 512Mi
-        cpu: 200m
     config:
       workloadName: "tailsampling"
       samplingRate: 0.5
@@ -112,19 +111,17 @@ collectors:
   cluster-metrics:
     enabled: true
     type: infrastructure
-    replicas: 1
+    replicas: 3
     mode: statefulset
-    serviceAccount: otel-collector
-    image: 
-      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
-      tag: "0.133.0"
     resources:
       limits:
+        memory: 2Gi
+        cpu: 1
+      requests:
         memory: 1Gi
         cpu: 500m
-      requests:
-        memory: 512Mi
-        cpu: 200m
+    targetAllocator:
+      enabled: true
     config:
       workloadName: "cluster"
       receivers: ["k8s_cluster", "prometheus"]

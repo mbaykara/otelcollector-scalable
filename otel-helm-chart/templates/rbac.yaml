@@ -70,4 +70,28 @@ subjects:
 - kind: ServiceAccount
   name: {{ .Values.serviceAccount.name }}
   namespace: {{ .Values.global.namespace }}
+
+---
+# Additional ClusterRoleBinding for Target Allocator service accounts
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-target-allocator-binding
+  labels:
+    {{- include "otel-collectors.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-cluster-role
+subjects:
+{{- range $name, $collector := .Values.collectors }}
+{{- if $collector.enabled }}
+{{- $mergedCollector := deepCopy $.Values.collectorsCommon | mustMergeOverwrite (deepCopy $collector) }}
+{{- if and $mergedCollector.targetAllocator $mergedCollector.targetAllocator.enabled }}
+- kind: ServiceAccount
+  name: {{ $.Release.Name }}-{{ $name }}-targetallocator
+  namespace: {{ $.Values.global.namespace }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- end }}
