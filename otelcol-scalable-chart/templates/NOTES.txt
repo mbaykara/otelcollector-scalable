@@ -1,0 +1,41 @@
+{{- $enabledCollectors := list }}
+{{- range $name, $collector := .Values.collectors }}
+  {{- if $collector.enabled }}
+    {{- $enabledCollectors = append $enabledCollectors $name }}
+  {{- end }}
+{{- end }}
+
+🎉 OpenTelemetry Collector Stack successfully deployed!
+
+DEPLOYED COMPONENTS:
+
+Collectors:
+{{- range $enabledCollectors | sortAlpha }}
+  {{- $collector := index $.Values.collectors . }}
+  ✅ {{ . | title }} Collector: {{ $.Release.Name }}-{{ . }} ({{ $collector.mode }})
+{{- end }}
+
+Dependencies:
+{{- if .Values.kubeStateMetrics.enabled }}
+  ✅ Kube-State-Metrics: {{ .Release.Name }}-kube-state-metrics (deployment)
+{{- end }}
+{{- if .Values.nodeExporter.enabled }}
+  ✅ Node-Exporter: node-exporter (daemonset)
+{{- end }}
+
+🔌 APPLICATION ENDPOINTS:
+
+{{- if index .Values.collectors "receiver" "enabled" }}
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    OTLP ENDPOINTS                                              │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Protocol │ Port │                            FQDN                                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│   gRPC   │ 4317 │ {{ .Release.Name }}-receiver-collector.{{ .Values.global.namespace }}.svc.cluster.local:4317 │
+│   HTTP   │ 4318 │ {{ .Release.Name }}-receiver-collector.{{ .Values.global.namespace }}.svc.cluster.local:4318 │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+{{- else }}
+  ⚠️  Receiver collector is disabled - no application endpoints available
+{{- end }}
+
