@@ -1,168 +1,196 @@
-# OpenTelemetry Collector Architecture for Kubernetes Observability
+# OpenTelemetry Collector Operator Scalable Stack
 
-This repository contains OpenTelemetry Collector configurations for a comprehensive Kubernetes observability stack deployed on AKS, sending data to Grafana Cloud.
+A comprehensive Helm chart for deploying a production-ready, scalable OpenTelemetry Collector stack on Kubernetes with Grafana Cloud integration.
 
-## Architecture Overview
+## 🏗️ Architecture Overview
 
-### Multi-Tier Collector Architecture
+This chart deploys a multi-tier OpenTelemetry Collector architecture optimized for high-throughput observability data processing:
 
 ```mermaid
 graph TD
-    A[Applications] -->|traces,metrics,logs| B[collector-receiver-lb]
-    B -->|metrics,logs | K[collector-metrics-otlp-logs]
-    K --> |native metrics,logs|F[Grafana Cloud]
-    B -->|traces| C[collector-tailsampling]
-    B -->|traces| D[collector-servicegraph] 
-    B -->|traces| E[collector-spanmetrics]
-    C -->|sampled traces| F[Grafana Cloud]
-    D -->|service graph metrics| F
-    E -->|span metrics| F
-    G[collector-cluster-metrics] -->|cluster metrics| F
-    H[collector-node-metrics] -->|node metrics| F
+    A[Applications] -->|OTLP: 4317/4318| B[Receiver Collector]
+    B -->|Load Balance| C[Tail Sampling]
+    B -->|Load Balance| D[Span Metrics]
+    B -->|Load Balance| E[Service Graph]
+    
+    C -->|Sampled Traces| F[Grafana Cloud]
+    D -->|RED Metrics| F
+    E -->|Service Topology| F
+    
+    G[Cluster Metrics] -->|K8s Metrics| F
+    H[Node Metrics] -->|Node/Pod Stats| F
+    
+    style B fill:#e1f5fe
+    style C fill:#f3e5f5
+    style D fill:#e8f5e8
+    style E fill:#fff3e0
+    style F fill:#ffebee
 ```
 
-### Collector Components
+## 🎯 Key Features
 
-#### 1. Trace Load Balancer (`collector-receiver.yaml` - deployed as `collector-receiver-lb`)
-- **Purpose**: Entry point for all application traces
-- **Deployment**: Single replica
-- **Function**: 
-  - Receives OTLP traces (gRPC:4317, HTTP:4318)
-  - Enriches traces with Kubernetes attributes
-  - Load balances to downstream collectors using routing strategies:
-    - `traceID` routing for tail sampling and servicegraph
-    - `service` routing for spanmetrics
+### 📊 **Application Observability**
+- **Receiver**: Entry point with load balancing and trace enrichment
+- **Tail Sampling**: Flexible, configurable sampling policies
+- **Span Metrics**: RED metrics generation from traces
+- **Service Graph**: Service topology and dependencies
 
-#### 2. Tail Sampling (`collector-tailsampling.yaml`) 
-- **Purpose**: Probabilistic sampling of traces
-- **Deployment**: 2 replicas
-- **Function**:
-  - 50% probabilistic sampling
-  - 10s decision wait
-  - Exports sampled traces to Grafana Cloud
+### 🖥️ **Infrastructure Monitoring**
+- **Cluster Metrics**: Kubernetes API metrics and kube-state-metrics
+- **Node Metrics**: kubelet stats and resource utilization
 
-#### 3. Span Metrics (`collector-spanmetrics.yaml`)
-- **Purpose**: Generate RED metrics from traces
-- **Deployment**: 2 replicas  
-- **Function**:
-  - Receives traces via service-based load balancing
-  - Generates span duration, count, and latency metrics
-  - Filters and exports span metrics to Grafana Cloud
+### 🔧 **Advanced Configuration**
+- **Transform Processors**: Configurable span name normalization per component
+- **Flexible Policies**: Support for all OpenTelemetry tail sampling policy types
+- **Component-Specific Configs**: Isolated configuration per collector
 
-#### 4. Service Graph (`collector-servicegraph.yaml`)
-- **Purpose**: Generate service topology metrics
-- **Deployment**: 2 replicas
-- **Function**:
-  - Receives traces via traceID-based load balancing
-  - Generates service-to-service relationship metrics
-  - 60s flush interval for service graph generation
-  - Exports service topology to Grafana Cloud
+## 📦 Components
 
-#### 5. Kubernetes Cluster Metrics (`collector-k8s-cluster.yaml`)
-- **Purpose**: Cluster-level observability 
-- **Deployment**: StatefulSet (1 replica)
-- **Function**:
-  - Scrapes kube-state-metrics with official Grafana allowlist
-  - Scrapes kubelet metrics with official Grafana allowlist  
-  - Scrapes cAdvisor container metrics
-  - Collects k8s_cluster API metrics
+| Component | Purpose | Deployment | Resources |
+|-----------|---------|------------|-----------|
+| **receiver** | OTLP ingestion & load balancing | Deployment (1 replica) | 2Gi mem, 1 CPU |
+| **tailsampling** | Smart trace sampling | StatefulSet (2 replicas) | 2Gi mem, 1 CPU |
+| **spanmetrics** | RED metrics from traces | Deployment (1 replica) | 8Gi mem, 1 CPU |
+| **servicegraph** | Service topology mapping | Deployment (1 replica) | 8Gi mem, 1 CPU |
+| **cluster-metrics** | K8s cluster monitoring | StatefulSet (3 replicas) | 2Gi mem, 1 CPU |
+| **node-metrics** | Node resource monitoring | DaemonSet | 256Mi mem, 200m CPU |
 
-#### 6. Kubernetes Node Metrics (`collector-k8s-nodes.yaml`)
-- **Purpose**: Node-level resource metrics
-- **Deployment**: DaemonSet (one per node)
-- **Function**:
-  - Collects kubeletstats from each node
-  - Node/pod/container CPU, memory, disk metrics
-  - Per-node resource utilization
-
-## Load Balancing Strategies
-
-| Collector | Routing Key | Purpose |
-|-----------|-------------|---------|
-| tailsampling | `traceID` | Ensures complete traces go to same instance for sampling decisions |
-| servicegraph | `traceID` | Ensures complete traces go to same instance for relationship analysis |
-| spanmetrics | `service` | Distributes spans by service for metric generation |
-
-## Deployment
+## 🚀 Quick Start
 
 ### Prerequisites
 
-#### [Opentelemetry Operator](https://github.com/open-telemetry/opentelemetry-operator)
+1. **OpenTelemetry Operator**
+   ```bash
+   kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
+   ```
 
-```bash
-kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
-```
-For GitOps approach see the other installation [options](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator)
-##### Grafana Cloud creds
+2. **Grafana Cloud Credentials**
+   - Stack ID (username)
+   - Access Policy Token (password) with OTLP write permissions
 
-```bash
-apiVersion: v1
-data:
-  stack_password: YOUR_CLOUD_ACCESS_POLICY_PASSWORD
-  stack_username: USERNAME
-kind: Secret
-metadata:
-  name: dv-grafanacloud-auth
+### Installation
 
-```
+1. **Clone and configure**
+   ```bash
+   git clone <this-repo>
+   cd otelcollector-operator-scalable
+   cp test-values.yml my-values.yml
+   ```
 
-```bash
-# Apply RBAC for cluster monitoring
-kubectl apply -f rbac-k8s-cluster.yaml
-# Deploy kube-state-metrics (required for cluster metrics)
-kubectl apply -f kube-state-metrics.yaml
-```
+2. **Update credentials in `my-values.yml`**
+   ```yaml
+   grafanaCloud:
+     endpoint: "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
+     username: "YOUR_STACK_ID"
+     password: "YOUR_ACCESS_POLICY_TOKEN"
+     createSecret: true
+   ```
 
-### Deploy Collectors
-```bash
-# Deploy in order:
-kubectl apply -f application/*
-```
-
-## Configuration
-
-### Environment Variables
-Configure these via ConfigMap `dv-grafanacloud-settings` and Secret `dv-grafanacloud-auth`:
-
-- `GRAFANA_OTLP_ENDPOINT` - Grafana Cloud OTLP endpoint
-- `GRAFANA_USERNAME` - Grafana Cloud stack username  
-- `GRAFANA_PASSWORD` - Grafana Cloud stack password
-- `COLLECTOR_ENVIRONMENT` - Environment identifier
-- `CLUSTER_NAME` - Kubernetes cluster name
+3. **Deploy**
+   ```bash
+   helm upgrade --install otel-stack -f my-values.yml otel-helm-chart
+   ```
 
 ### Application Integration
 
-Applications should send traces to:
-```
-FQDN: collector-receiver-lb-collector.o11y.svc.cluster.local:4317 (gRPC)
-FQDN: collector-receiver-lb-collector.o11y.svc.cluster.local:4318 (HTTP)
-```
-
-## Metrics Collected
-
-### Traces & Application Metrics
-- **Traces**: Distributed traces with 50% tail sampling
-- **Span Metrics**: Duration, count, latency per service/operation  
-- **Service Graph**: Service topology and request flow
-
-### Kubernetes Infrastructure  
-- **Cluster Metrics**: Deployments, pods, jobs, namespaces (via kube-state-metrics)
-- **Node Metrics**: CPU, memory, disk utilization per node/pod/container
-- **Kubelet Metrics**: Runtime operations, certificate status, volume stats
-
-## Monitoring
-
-Each collector exposes Prometheus metrics on port 8888:
+Configure your applications to send telemetry to:
 ```bash
-kubectl port-forward -n o11y svc/collector-receiver-lb-collector-monitoring 8888:8888
+# gRPC OTLP
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-stack-receiver-collector.o11y.svc.cluster.local:4317
+
+# HTTP OTLP  
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-stack-receiver-collector.o11y.svc.cluster.local:4318
 ```
 
-Health checks available on port 13133 for each collector.
+## ⚙️ Configuration
 
-## Architecture Benefits
+### Transform Processors
 
-- **Scalability**: Dedicated collectors for different data types
-- **Performance**: Optimized load balancing and resource allocation
-- **Reliability**: Proper tail sampling and service discovery
-- **Observability**: Complete trace, metric, and infrastructure monitoring
-- **Standards Compliance**: Follows Grafana Cloud best practices and allowlists
+Configure span name normalization per component:
+
+```yaml
+applicationObservability:
+  receiver:
+    transform:
+      traces:
+        enabled: true
+        transforms:
+          span:
+            - replace_pattern(span.name, "^GET /api/cart.*", "GET /api/cart")
+            - replace_pattern(span.name, "^GET /api/users/\\d+", "GET /api/users/{id}")
+  
+  spanmetrics:
+    transform:
+      traces:
+        enabled: true
+        transforms:
+          span:
+            - replace_pattern(span.name, "^GET /media/.*", "GET /media/image")
+```
+
+### Tail Sampling Policies
+
+Support for all OpenTelemetry policy types with complex nesting:
+
+```yaml
+applicationObservability:
+  tailsampling:
+    policies:
+      enabled: true
+      list:
+        # Always sample errors
+        - name: errors-always
+          type: status_code
+          status_code:
+            status_codes: [ERROR]
+        
+        # Sample slow requests
+        - name: slow-requests
+          type: latency
+          latency:
+            threshold_ms: 2000
+        
+        # Complex AND policy
+        - name: critical-service-errors
+          type: and
+          and:
+            and_sub_policy:
+              - name: service-filter
+                type: string_attribute
+                string_attribute:
+                  key: service.name
+                  values: [auth-service, payment-service]
+              - name: error-filter
+                type: status_code
+                status_code:
+                  status_codes: [ERROR]
+        
+        # Rate limiting
+        - name: rate-limit-rest
+          type: rate_limiting
+          rate_limiting:
+            spans_per_second: 100
+        
+        # Probabilistic fallback
+        - name: sample-rest
+          type: probabilistic
+          probabilistic:
+            sampling_percentage: 5
+```
+
+### Supported Policy Types
+
+- `always_sample` - Always sample specific traces
+- `latency` - Sample based on response time
+- `numeric_attribute` - Sample based on numeric values
+- `probabilistic` - Random percentage sampling
+- `status_code` - Sample based on HTTP/gRPC status
+- `string_attribute` - Sample based on string matching
+- `rate_limiting` - Limit sampling throughput
+- `span_count` - Sample based on trace complexity
+- `trace_state` - Sample based on trace state
+- `boolean_attribute` - Sample based on boolean flags
+- `ottl_condition` - Sample using OTTL expressions
+- `and` - Logical AND of multiple policies
+- `composite` - Multiple evaluation criteria with ordering
+

@@ -1,4 +1,5 @@
-*secret.*
+./*secret.*
+!*templates*
 *env*
 *credent.*
 *keys*

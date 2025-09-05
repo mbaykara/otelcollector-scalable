@@ -16,8 +16,8 @@ This Helm chart deploys a complete OpenTelemetry Collector stack for Kubernetes 
 
 ## Prerequisites
 
-- Kubernetes 1.19+
-- Helm 3.0+
+- Kubernetes 1.28+
+- Helm 3.15+
 - Grafana Cloud account with OTLP endpoint
 
 ## Installation
