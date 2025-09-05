@@ -2,6 +2,13 @@
 {{- if $collector.enabled }}
 {{- /* Merge collectorsCommon with individual collector settings */ -}}
 {{- $mergedCollector := deepCopy $.Values.collectorsCommon | mustMergeOverwrite (deepCopy $collector) }}
+{{- /* Get transform configuration for this collector */ -}}
+{{- $transformConfig := dict }}
+{{- if hasKey $.Values "applicationObservability" }}
+{{- if hasKey $.Values.applicationObservability $name }}
+{{- $transformConfig = index $.Values.applicationObservability $name "transform" }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
@@ -211,14 +218,21 @@ spec:
         num_traces: 50000
         expected_new_traces_per_sec: 10
         policies:
+        {{- $tailsamplingConfig := index $.Values.applicationObservability "tailsampling" }}
+        {{- if and $tailsamplingConfig.policies $tailsamplingConfig.policies.enabled $tailsamplingConfig.policies.list }}
+        {{- range $tailsamplingConfig.policies.list }}
+        - {{ . | toYaml | nindent 10 | trim }}
+        {{- end }}
+        {{- else }}
           - name: probabilistic-policy
             type: probabilistic
             probabilistic:
               sampling_percentage: {{ mul $mergedCollector.config.samplingRate 100 }}
+        {{- end }}
       {{- end }}
       {{- if eq $name "receiver" }}
       resourcedetection:
-        detectors: [env, system]
+        detectors: ["env", "system"]
         timeout: 5s
         override: false
       
@@ -226,11 +240,33 @@ spec:
         log_statements:
           - set(resource.attributes["loki.resource.labels"], Concat(["deployment.environment", "service.name", "service.namespace", "service.instance.id", "otel_collector_environment", "cloud.platform", "cloud.datacenter"], ","))
           - set(resource.attributes["otel_collector_environment"], "${env:COLLECTOR_ENVIRONMENT}")
+          {{- if and $transformConfig $transformConfig.logs $transformConfig.logs.enabled $transformConfig.logs.transforms.log }}
+          {{- range $transformConfig.logs.transforms.log }}
+          - {{ . }}
+          {{- end }}
+          {{- end }}
         trace_statements:
           - set(resource.attributes["otel_collector_environment"], "${env:COLLECTOR_ENVIRONMENT}")
           - set(resource.attributes["service.instance.id"], resource.attributes["k8s.pod.name"]) where resource.attributes["k8s.pod.name"] != nil
           - set(resource.attributes["service.instance.id"], "MISSING_POD_NAME") where resource.attributes["k8s.pod.name"] == nil
           - set(resource.attributes["k8s.cluster.name"], "${env:CLUSTER_NAME}")
+          {{- if and $transformConfig $transformConfig.traces $transformConfig.traces.enabled $transformConfig.traces.transforms.span }}
+          {{- range $transformConfig.traces.transforms.span }}
+          - {{ . }}
+          {{- end }}
+          {{- end }}
+        {{- if and $transformConfig $transformConfig.traces $transformConfig.traces.enabled $transformConfig.traces.transforms.resource }}
+        resource_statements:
+          {{- range $transformConfig.traces.transforms.resource }}
+          - {{ . }}
+          {{- end }}
+        {{- end }}
+        {{- if and $transformConfig $transformConfig.metrics $transformConfig.metrics.enabled $transformConfig.metrics.transforms.datapoint }}
+        metric_statements:
+          {{- range $transformConfig.metrics.transforms.datapoint }}
+          - {{ . }}
+          {{- end }}
+        {{- end }}
       
       transform/drop_unneeded_resource_attributes:
         error_mode: ignore
@@ -286,8 +322,6 @@ spec:
             - k8s.deployment.name
             - k8s.statefulset.name
             - k8s.daemonset.name
-            - k8s.cronjob.name
-            - k8s.job.name
             - k8s.node.name
             - k8s.pod.name
             - k8s.pod.uid
@@ -302,6 +336,15 @@ spec:
               key: app.kubernetes.io/component  
               from: pod
       {{- end }}
+      
+      {{- if and (eq $name "spanmetrics") $transformConfig $transformConfig.traces $transformConfig.traces.enabled $transformConfig.traces.transforms.span }}
+      transform/spanname_normalization:
+        trace_statements:
+          {{- range $transformConfig.traces.transforms.span }}
+          - {{ . }}
+          {{- end }}
+      {{- end }}
+      
       {{- if eq $name "node-metrics" }}
       filter/kubeletstats_allowlist:
         metrics:
@@ -385,7 +428,7 @@ spec:
         {{- else if eq $name "spanmetrics" }}
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, resource/add_collector_info, batch]
+          processors: [memory_limiter, resource/add_collector_info{{- if and $transformConfig $transformConfig.traces $transformConfig.traces.enabled $transformConfig.traces.transforms.span }}, transform/spanname_normalization{{- end }}, batch]
           exporters: [spanmetrics]
         metrics/spanmetrics:
           receivers: [spanmetrics]

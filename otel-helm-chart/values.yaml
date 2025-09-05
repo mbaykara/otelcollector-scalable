@@ -28,6 +28,166 @@ collectorsCommon:
       cpu: 200m
   serviceAccount: otel-collector
 
+## Application Observability Configuration
+applicationObservability:
+  receiver:
+    transform:
+      traces:
+        enabled: false
+        transforms:
+          resource: []
+          span: []
+      metrics:
+        enabled: false
+        filters:
+          datapoint: []
+        transforms:
+          datapoint: []
+      logs:
+        enabled: false
+        transforms:
+          log: []
+  
+  spanmetrics:
+    transform:
+      metrics:
+        enabled: false
+        filters:
+          datapoint: []
+        transforms:
+          datapoint: []
+  
+  servicegraph:
+    transform:
+      metrics:
+        enabled: false
+        filters:
+          datapoint: []
+        transforms:
+          datapoint: []
+  
+  tailsampling:
+    policies:
+      enabled: false
+      # List of tail sampling policies - supports all OpenTelemetry tail sampling policy types
+      list: []
+      # Examples of all supported policy types:
+      # list:
+      #   # Always sample certain traces
+      #   - name: always-sample-critical
+      #     type: always_sample
+      #
+      #   # Sample based on latency
+      #   - name: slow-requests
+      #     type: latency
+      #     latency:
+      #       threshold_ms: 2000
+      #
+      #   # Sample based on numeric attributes
+      #   - name: high-value-transactions
+      #     type: numeric_attribute
+      #     numeric_attribute:
+      #       key: transaction.amount
+      #       min_value: 1000
+      #       max_value: 10000
+      #
+      #   # Probabilistic sampling
+      #   - name: random-sample
+      #     type: probabilistic
+      #     probabilistic:
+      #       hash_salt: custom-salt
+      #       sampling_percentage: 10
+      #
+      #   # Sample based on status codes
+      #   - name: errors-only
+      #     type: status_code
+      #     status_code:
+      #       status_codes: [ERROR, UNSET]
+      #
+      #   # Sample based on string attributes
+      #   - name: important-services
+      #     type: string_attribute
+      #     string_attribute:
+      #       key: service.name
+      #       values: [auth-service, payment-service]
+      #
+      #   # Rate limiting
+      #   - name: rate-limit
+      #     type: rate_limiting
+      #     rate_limiting:
+      #       spans_per_second: 100
+      #
+      #   # Sample based on span count
+      #   - name: complex-traces
+      #     type: span_count
+      #     span_count:
+      #       min_spans: 10
+      #       max_spans: 1000
+      #
+      #   # Sample based on trace state
+      #   - name: trace-state-sample
+      #     type: trace_state
+      #     trace_state:
+      #       key: sampling
+      #       values: [enabled, priority]
+      #
+      #   # Sample based on boolean attributes
+      #   - name: debug-traces
+      #     type: boolean_attribute
+      #     boolean_attribute:
+      #       key: debug.enabled
+      #       value: true
+      #
+      #   # Sample based on OTTL conditions
+      #   - name: ottl-condition
+      #     type: ottl_condition
+      #     ottl_condition:
+      #       error_mode: ignore
+      #       span:
+      #         - 'attributes["http.status_code"] >= 400'
+      #       spanevent:
+      #         - 'name == "exception"'
+      #
+      #   # AND policy (all sub-policies must match)
+      #   - name: errors-and-slow
+      #     type: and
+      #     and:
+      #       and_sub_policy:
+      #         - name: error-policy
+      #           type: status_code
+      #           status_code:
+      #             status_codes: [ERROR]
+      #         - name: latency-policy
+      #           type: latency
+      #           latency:
+      #             threshold_ms: 1000
+      #
+      #   # Composite policy (multiple evaluation criteria)
+      #   - name: composite-sample
+      #     type: composite
+      #     composite:
+      #       max_total_spans_per_second: 1000
+      #       policy_order: [errors-policy, latency-policy, probabilistic-policy]
+      #       composite_sub_policy:
+      #         - name: errors-policy
+      #           type: status_code
+      #           status_code:
+      #             status_codes: [ERROR]
+      #         - name: latency-policy  
+      #           type: latency
+      #           latency:
+      #             threshold_ms: 500
+      #         - name: probabilistic-policy
+      #           type: probabilistic
+      #           probabilistic:
+      #             sampling_percentage: 5
+    transform:
+      traces:
+        enabled: false
+        transforms:
+          resource: []
+          span: []
+
 ## Collector Definitions
 collectors:
   # Application Observability Collectors
