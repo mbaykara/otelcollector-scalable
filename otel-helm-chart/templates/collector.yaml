@@ -436,12 +436,12 @@ spec:
   - name: GRAFANA_USERNAME
     valueFrom:
       secretKeyRef:
-        key: {{ $.Values.grafanaCloud.usernameKey }}
+        key: username
         name: {{ $.Values.grafanaCloud.authSecretName }}
   - name: GRAFANA_PASSWORD
     valueFrom:
       secretKeyRef:
-        key: {{ $.Values.grafanaCloud.passwordKey }}
+        key: password
         name: {{ $.Values.grafanaCloud.authSecretName }}
 
   {{- if or $mergedCollector.volumeMounts (eq $name "receiver") (eq $name "node-metrics") }}
