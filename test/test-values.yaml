@@ -6,13 +6,6 @@ global:
   environment: "test"
   namespace: o11y
 
-# Legacy configuration for validation compatibility
-grafanaCloud:
-  endpoint: "http://tempo:4318" # Dummy value for validation
-  authSecretName: "test-auth"
-  usernameKey: "username"
-  passwordKey: "password"
-
 # Disable pre-install validation for CI
 validation:
   enabled: false
