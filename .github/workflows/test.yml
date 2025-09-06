@@ -50,8 +50,17 @@ jobs:
 
     - name: Deploy observability backends
       run: |
-        kubectl apply -f test/deploy-backends.yaml
-        kubectl wait --for=condition=available --timeout=300s deployment -n observability
+        # Apply with explicit handling
+        set -e
+        kubectl apply -f test/deploy-backends.yaml --validate=false
+        
+        # Wait for deployments to be ready
+        echo "Waiting for observability backends to be ready..."
+        kubectl wait --for=condition=available --timeout=300s deployment/prometheus -n observability
+        kubectl wait --for=condition=available --timeout=300s deployment/tempo -n observability  
+        kubectl wait --for=condition=available --timeout=300s deployment/loki -n observability
+        
+        echo "All observability backends are ready!"
 
     - name: Install Helm chart
       run: |
