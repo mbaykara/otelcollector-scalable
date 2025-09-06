@@ -1,0 +1,100 @@
+# CI Test values - Simple configuration for Kind cluster testing
+# Uses local Prometheus, Loki, and Tempo backends
+
+global:
+  clusterName: "kind-test"
+  environment: "test"
+  namespace: o11y
+
+# Multiple destinations using local backends in Kind cluster
+otlpDestinations:
+  tempo:
+    enabled: true
+    endpoint: "http://tempo:4318"
+    authSecretName: test-auth
+    usernameKey: "username"
+    passwordKey: "password"
+    signals: ["traces"]
+  
+  prometheus:
+    enabled: true
+    endpoint: "http://prometheus:9090/api/v1/otlp"
+    authSecretName: test-auth
+    usernameKey: "username"
+    passwordKey: "password"
+    signals: ["metrics"]
+    
+  loki:
+    enabled: true
+    endpoint: "http://loki:3100/otlp"
+    authSecretName: test-auth
+    usernameKey: "username"
+    passwordKey: "password"
+    signals: ["logs"]
+
+# Minimal collectors for testing
+collectors:
+  receiver:
+    enabled: true
+    type: application
+    replicas: 1
+    mode: deployment
+    serviceAccount: otel-collector
+    resources:
+      limits:
+        memory: 256Mi
+        cpu: 100m
+      requests:
+        memory: 128Mi
+        cpu: 50m
+    config:
+      workloadName: "receiver"
+      receivers: ["otlp"]
+      processors: ["memory_limiter", "batch"]
+      exporters: ["loadbalancing"]
+
+  tailsampling:
+    enabled: true
+    type: application
+    replicas: 1
+    serviceAccount: otel-collector
+    resources:
+      limits:
+        memory: 256Mi
+        cpu: 100m
+      requests:
+        memory: 128Mi
+        cpu: 50m
+    config:
+      workloadName: "tailsampling"
+      samplingRate: 1.0
+      decisionWait: "5s"
+      receivers: ["otlp"]
+      processors: ["memory_limiter", "batch"]
+
+  # Disable other collectors for simple testing
+  spanmetrics:
+    enabled: false
+  servicegraph:
+    enabled: false
+  cluster-metrics:
+    enabled: false
+  node-metrics:
+    enabled: false
+
+# Disable dependencies
+kubeStateMetrics:
+  enabled: false
+nodeExporter:
+  enabled: false
+
+# Simple RBAC
+rbac:
+  create: true
+serviceAccount:
+  create: true
+  name: otel-collector
+
+# Basic histogram config
+histograms:
+  buckets: [0.1s, 1s, 5s]

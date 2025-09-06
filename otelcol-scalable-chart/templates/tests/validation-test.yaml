@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-validation-test
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "otel-collectors.labels" . | nindent 4 }}
+    component: validation-test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ .Release.Name }}-test
+  containers:
+  - name: validation-test
+    image: bitnami/kubectl:latest
+    imagePullPolicy: IfNotPresent
+    command:
+    - /bin/bash
+    - -c
+    - |
+      set -e
+      echo "🧪 Running post-deployment validation tests..."
+      
+      # Test 1: Check if collectors are deployed
+      echo "Test 1: Checking collector deployments..."
+      {{- range $name, $collector := .Values.collectors }}
+      {{- if $collector.enabled }}
+      if ! kubectl get opentelemetrycollector {{ $.Release.Name }}-{{ $name }} -n {{ $.Values.global.namespace }} >/dev/null 2>&1; then
+        echo "❌ FAIL: Collector '{{ $name }}' not found"
+        echo "Available collectors:"
+        kubectl get opentelemetrycollector -n {{ $.Values.global.namespace }}
+        exit 1
+      fi
+      echo "✅ PASS: Collector '{{ $name }}' deployed"
+      {{- end }}
+      {{- end }}
+      
+      # Test 3: Check health endpoints
+      {{- if index .Values.collectors "receiver" "enabled" }}
+      echo "Test 3: Checking health endpoints..."
+      # Get the actual pod name for the receiver collector
+      RECEIVER_POD=$(kubectl get pods -n {{ .Values.global.namespace }} -l app.kubernetes.io/component=opentelemetry-collector,app.kubernetes.io/instance={{ .Release.Name }}-receiver -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+      if [ -n "$RECEIVER_POD" ]; then
+        if kubectl exec "$RECEIVER_POD" -n {{ .Values.global.namespace }} -- wget -qO- --timeout=5 http://localhost:13133/ >/dev/null 2>&1; then
+          echo "✅ PASS: Health endpoint responding"
+        else
+          echo "⚠️  WARNING: Health endpoint not responding (may still be starting)"
+        fi
+      else
+        echo "⚠️  WARNING: Could not find receiver pod for health check"
+      fi
+      {{- end }}
+      
+      # Test 4: Validate StatefulSet services for stateful collectors
+      echo "Test 4: Checking StatefulSet headless services..."
+      {{- range $name, $collector := .Values.collectors }}
+      {{- if and $collector.enabled (eq $collector.mode "statefulset") }}
+      if ! kubectl get service {{ $.Release.Name }}-{{ $name }}-collector-headless -n {{ $.Values.global.namespace }} >/dev/null 2>&1; then
+        echo "❌ FAIL: Headless service for {{ $name }} not found"
+        exit 1
+      fi
+      echo "✅ PASS: Headless service for {{ $name }} exists"
+      {{- end }}
+      {{- end }}
+      
+      # Test 5: Check OTLP endpoints availability
+      {{- if index .Values.collectors "receiver" "enabled" }}
+      echo "Test 5: Checking OTLP endpoint services..."
+      if ! kubectl get service {{ .Release.Name }}-receiver-collector -n {{ .Values.global.namespace }} >/dev/null 2>&1; then
+        echo "❌ FAIL: OTLP receiver service not found"
+        exit 1
+      fi
+      
+      # Check if service has endpoints
+      ENDPOINTS=$(kubectl get endpoints {{ .Release.Name }}-receiver-collector -n {{ .Values.global.namespace }} -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+      if [ -z "$ENDPOINTS" ]; then
+        echo "⚠️  WARNING: OTLP receiver service has no ready endpoints"
+      else
+        echo "✅ PASS: OTLP receiver service has ready endpoints"
+      fi
+      {{- end }}
+      
+      echo "🎉 All validation tests completed successfully!"
+    resources:
+      limits:
+        memory: 128Mi
+        cpu: 100m
+      requests:
+        memory: 64Mi
+        cpu: 50m

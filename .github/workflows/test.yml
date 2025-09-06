@@ -1,0 +1,65 @@
+name: Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  chart-test:
+    name: Chart Testing
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: v3.15.4
+
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v4
+      with:
+        version: v1.30.0
+
+    - name: Create kind cluster
+      uses: helm/kind-action@v1
+      with:
+        cluster_name: otel-test
+
+    - name: Install OpenTelemetry Operator
+      run: |
+        # Install cert-manager first
+        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.1/cert-manager.yaml
+        kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-webhook -n cert-manager
+        
+        # Install OpenTelemetry Operator
+        kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
+        kubectl wait --for=condition=available --timeout=300s deployment/opentelemetry-operator-controller-manager -n opentelemetry-operator-system
+
+    - name: Create test secrets
+      run: |
+        kubectl create namespace o11y
+        
+        kubectl create secret generic otlp-grafana-net-auth \
+          --from-literal=username="test-user" \
+          --from-literal=password="test-password" \
+          -n o11y
+        
+        kubectl create secret generic otlp-azure-foobar-auth \
+          --from-literal=username="test-user" \
+          --from-literal=password="test-password" \
+          -n o11y
+
+    - name: Install Helm chart
+      run: |
+        cd otelcol-scalable-chart
+        helm install test-release . -f test-values.yml -n o11y --wait --timeout 10m
+
+    - name: Verify deployment
+      run: |
+        kubectl get pods -n o11y
+        kubectl get svc -n o11y
+        kubectl get opentelemetrycollectors -n o11y
