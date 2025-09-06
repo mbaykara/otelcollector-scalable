@@ -53,12 +53,40 @@ jobs:
         cd otelcol-scalable-chart
         helm package .
 
+    - name: Generate changelog
+      id: changelog
+      run: |
+        if [ -n "$(git tag -l --sort=-version:refname | head -2 | tail -1)" ]; then
+          PREVIOUS_TAG=$(git tag -l --sort=-version:refname | head -2 | tail -1)
+          echo "PREVIOUS_TAG=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+          
+          # Generate commit list since last tag
+          COMMITS=$(git log --pretty=format:"* %s (%h)" $PREVIOUS_TAG..HEAD --no-merges)
+          echo "COMMITS<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        else
+          echo "COMMITS=* Initial release" >> $GITHUB_OUTPUT
+        fi
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.get_version.outputs.TAG }}
         name: Release ${{ steps.get_version.outputs.TAG }}
         generate_release_notes: true
+        body: |
+          ## Changes in this release
+          
+          ${{ steps.changelog.outputs.COMMITS }}
+          
+          ## Helm Chart Installation
+          
+          ```bash
+          helm install otel-collectors oci://ghcr.io/${{ github.repository_owner }}/charts/otelcol-scalable-chart --version ${{ steps.get_version.outputs.VERSION }} -n o11y
+          ```
+          
+          See [documentation](https://github.com/${{ github.repository }}/blob/main/README.md) for configuration details.
         files: |
           otelcol-scalable-chart/*.tgz
 
