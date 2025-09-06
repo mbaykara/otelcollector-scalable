@@ -28,6 +28,8 @@ collectorsCommon:
       cpu: 200m
   serviceAccount: otel-collector
 
+readinessProbe:
+  enabled: true
 ## Application Observability Configuration
 applicationObservability:
   receiver:

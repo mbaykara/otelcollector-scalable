@@ -5,7 +5,7 @@
   {{- end }}
 {{- end }}
 
-🎉 Scalable OpenTelemetry Collectors successfully deployed!
+Scalable OpenTelemetry Collectors successfully deployed!
 
 DEPLOYED COMPONENTS:
 
@@ -22,9 +22,6 @@ Dependencies:
 {{- if .Values.nodeExporter.enabled }}
   ✅ Node-Exporter: node-exporter (daemonset)
 {{- end }}
-
-🔌 APPLICATION ENDPOINTS:
-
 {{- if index .Values.collectors "receiver" "enabled" }}
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                    OTLP ENDPOINTS                                           │

@@ -28,7 +28,14 @@ spec:
   {{- end }}
   resources:
     {{- toYaml $mergedCollector.resources | nindent 4 }}
-  
+  {{- if $.Values.readinessProbe.enabled }}
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 13133
+    initialDelaySeconds: {{ $.Values.readinessProbe.initialDelaySeconds | default 15 }}
+    periodSeconds: {{ $.Values.readinessProbe.periodSeconds | default 5 }}
+  {{- end }}
   {{- if has "prometheus" $mergedCollector.config.receivers }}
   targetAllocator:
     enabled: true

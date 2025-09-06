@@ -4,6 +4,27 @@ This Helm chart deploys a complete OpenTelemetry Collector stack for Kubernetes 
 
 ## Architecture
 
+```mermaid
+graph TD
+    A[Applications] -->|OTLP: 4317/4318| B[Receiver Collector]
+    B -->|Load Balance| C[Tail Sampling]
+    B -->|Load Balance| D[Span Metrics]
+    B -->|Load Balance| E[Service Graph]
+    
+    C -->|Sampled Traces| F[Grafana Cloud]
+    D -->|RED Metrics| F
+    E -->|Service Topology| F
+    
+    G[Cluster Metrics] -->|K8s Metrics| F
+    H[Node Metrics] -->|Node/Pod Stats| F
+    
+    style B fill:#e1f5fe
+    style C fill:#f3e5f5
+    style D fill:#e8f5e8
+    style E fill:#fff3e0
+    style F fill:#ffebee
+```
+
 - **Application Collectors**: Process traces and generate metrics
   - `collector-receiver` - OTLP trace receiver and load balancer
   - `collector-tailsampling` - Probabilistic trace sampling  
