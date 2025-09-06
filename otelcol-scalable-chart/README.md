@@ -1,6 +1,6 @@
 # OpenTelemetry Collector Stack Helm Chart
 
-This Helm chart deploys a complete OpenTelemetry Collector stack for Kubernetes observability with Grafana Cloud integration.
+This Helm chart deploys a complete OpenTelemetry Collector stack for Kubernetes observability with support for multiple OTLP destinations including Grafana Cloud, Jaeger, Loki, Prometheus, and any OTLP-compatible backend.
 
 ## Architecture
 
@@ -11,12 +11,17 @@ graph TD
     B -->|Load Balance| D[Span Metrics]
     B -->|Load Balance| E[Service Graph]
     
-    C -->|Sampled Traces| F[Grafana Cloud]
+    C -->|Sampled Traces| F[Multiple OTLP Destinations]
     D -->|RED Metrics| F
     E -->|Service Topology| F
     
     G[Cluster Metrics] -->|K8s Metrics| F
     H[Node Metrics] -->|Node/Pod Stats| F
+    
+    F -->|Traces| I[Grafana Cloud]
+    F -->|Traces| T[Tempo]
+    F -->|Metrics| K[Prometheus]
+    F -->|Logs| L[Loki]
     
     style B fill:#e1f5fe
     style C fill:#f3e5f5
@@ -35,11 +40,20 @@ graph TD
   - `collector-k8s-cluster` - Cluster-wide metrics (StatefulSet)
   - `collector-k8s-nodes` - Node-level metrics (DaemonSet)
 
+## Features
+
+✅ **Multi-Destination Support**: Send telemetry to multiple OTLP backends simultaneously  
+✅ **Signal Routing**: Route traces, metrics, and logs to different destinations  
+✅ **Flexible Authentication**: Per-destination authentication with Kubernetes secrets  
+✅ **Backward Compatibility**: Existing Grafana Cloud configurations work unchanged  
+✅ **Production Ready**: Built-in resiliency, load balancing, and health checks  
+
 ## Prerequisites
 
 - Kubernetes 1.28+
 - Helm 3.15+
-- Grafana Cloud account with OTLP endpoint
+- OpenTelemetry Operator 0.95+
+- One or more OTLP-compatible backends (Grafana Cloud, Jaeger, Loki, Prometheus, etc.)
 
 ## Installation
 
@@ -48,11 +62,24 @@ graph TD
 kubectl create namespace o11y
 ```
 
-2. **Create Grafana Cloud secret:**
+2. **Create authentication secrets for your destinations:**
 ```bash
-kubectl create secret generic dv-grafanacloud-auth \
-  --from-literal=stack_username="YOUR_USERNAME" \
-  --from-literal=stack_password="YOUR_PASSWORD" \
+# Grafana Cloud
+kubectl create secret generic grafana-cloud-auth \
+  --from-literal=username="YOUR_GRAFANA_USERNAME" \
+  --from-literal=password="YOUR_GRAFANA_TOKEN" \
+  -n o11y
+
+# Jaeger (if using)
+kubectl create secret generic jaeger-auth \
+  --from-literal=username="YOUR_JAEGER_USERNAME" \
+  --from-literal=password="YOUR_JAEGER_PASSWORD" \
+  -n o11y
+
+# Loki (if using)  
+kubectl create secret generic loki-auth \
+  --from-literal=username="YOUR_LOKI_USERNAME" \
+  --from-literal=password="YOUR_LOKI_PASSWORD" \
   -n o11y
 ```
 
@@ -63,21 +90,68 @@ helm dependency build
 
 4. **Install chart:**
 ```bash
-helm install otel-stack . -n o11y \
-  --set global.clusterName="your-cluster-name" \
-  --set grafanaCloud.endpoint="https://your-grafana-endpoint/otlp"
+helm install otel-stack . -n o11y -f values.yaml
+```
+
+**Example values.yaml:**
+```yaml
+global:
+  clusterName: "my-cluster"
+  environment: "production"
+
+otlpDestinations:
+  grafanaCloud:
+    enabled: true
+    endpoint: "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
+    authSecretName: "grafana-cloud-auth"
+    usernameKey: "username"
+    passwordKey: "password"
+    signals: ["traces", "metrics", "logs"]
+  
+  jaeger:
+    enabled: true
+    endpoint: "http://jaeger:4318"
+    authSecretName: "jaeger-auth"
+    usernameKey: "username" 
+    passwordKey: "password"
+    signals: ["traces"]
+    
+  loki:
+    enabled: true
+    endpoint: "http://loki:3100/otlp"
+    authSecretName: "loki-auth"
+    usernameKey: "username"
+    passwordKey: "password"
+    signals: ["logs"]
 ```
 
 ## Configuration
 
-### Key Values
+### Key Configuration Parameters
 
+#### Global Settings
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `global.clusterName` | Kubernetes cluster name | `monitoring-aks-01` |
+| `global.clusterName` | Kubernetes cluster name | `""` |
 | `global.environment` | Environment identifier | `production` |
-| `grafanaCloud.endpoint` | Grafana Cloud OTLP endpoint | `https://otlp-gateway-prod-eu-west-3.grafana.net/otlp` |
-| `grafanaCloud.authSecretName` | Secret containing Grafana Cloud credentials | `dv-grafanacloud-auth` |
+| `global.namespace` | Target namespace | `o11y` |
+
+#### OTLP Destinations
+| Parameter | Description | Required |
+|-----------|-------------|----------|
+| `otlpDestinations.<name>.enabled` | Enable this destination | Yes |
+| `otlpDestinations.<name>.endpoint` | OTLP endpoint URL | Yes |
+| `otlpDestinations.<name>.authSecretName` | Kubernetes secret name | Yes |
+| `otlpDestinations.<name>.usernameKey` | Username key in secret | Yes |
+| `otlpDestinations.<name>.passwordKey` | Password key in secret | Yes |
+| `otlpDestinations.<name>.signals` | Signal types: `["traces", "metrics", "logs"]` | Yes |
+
+#### Readiness Probe
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `readinessProbe.enabled` | Enable readiness probe | `true` |
+| `readinessProbe.initialDelaySeconds` | Initial delay | `15` |
+| `readinessProbe.periodSeconds` | Check interval | `5` |
 
 ### Allowlists
 
@@ -138,6 +212,99 @@ Each collector exposes metrics on port 8888:
 ```bash
 kubectl port-forward -n o11y svc/otel-stack-collector-receiver 8888:8888
 ```
+
+## Multi-Destination Examples
+
+### Grafana Cloud + Jaeger for Traces
+Send traces to both Grafana Cloud and Jaeger:
+```yaml
+otlpDestinations:
+  grafanaCloud:
+    enabled: true
+    endpoint: "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
+    authSecretName: "grafana-auth"
+    usernameKey: "username"
+    passwordKey: "password"
+    signals: ["traces", "metrics", "logs"]
+    
+  jaeger:
+    enabled: true
+    endpoint: "http://jaeger:4318"
+    authSecretName: "jaeger-auth" 
+    usernameKey: "username"
+    passwordKey: "password"
+    signals: ["traces"]  # Only traces to Jaeger
+```
+
+### Separate Backends per Signal Type
+Route different signals to specialized backends:
+```yaml
+otlpDestinations:
+  jaeger:
+    enabled: true
+    endpoint: "http://jaeger:4318"
+    authSecretName: "jaeger-auth"
+    signals: ["traces"]    # Traces → Jaeger
+    
+  prometheus:
+    enabled: true
+    endpoint: "http://prometheus:3100/otlp/v1/write" 
+    authSecretName: "prometheus-auth"
+    signals: ["metrics"]   # Metrics → Prometheus
+    
+  loki:
+    enabled: true
+    endpoint: "http://loki:3100/otlp"
+    authSecretName: "loki-auth" 
+    signals: ["logs"]      # Logs → Loki
+```
+
+## Migration Guide
+
+### From Single Grafana Cloud to Multi-Destination
+
+**Old configuration:**
+```yaml
+grafanaCloud:
+  endpoint: "https://otlp-gateway.grafana.net/otlp"
+  authSecretName: "grafana-auth"
+```
+
+**New configuration:**
+```yaml
+otlpDestinations:
+  grafanaCloud:
+    enabled: true
+    endpoint: "https://otlp-gateway.grafana.net/otlp"
+    authSecretName: "grafana-auth"
+    usernameKey: "username"  # Add this
+    passwordKey: "password"  # Add this  
+    signals: ["traces", "metrics", "logs"]  # Add this
+```
+
+**Changes required:**
+1. Move `grafanaCloud` config under `otlpDestinations.grafanaCloud`
+2. Add `usernameKey` and `passwordKey` fields
+3. Add `signals` array to specify which telemetry types to send
+4. Ensure secret has keys matching `usernameKey`/`passwordKey` values
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"ERROR: otlpDestinations.X.endpoint is required"**
+   - Ensure all enabled destinations have valid `endpoint` URLs
+   - URLs must start with `http://` or `https://`
+
+2. **Authentication failures**
+   - Verify secrets exist: `kubectl get secret <secret-name> -n o11y`
+   - Check secret keys match `usernameKey`/`passwordKey` values
+   - Verify credentials are correct for each destination
+
+3. **No telemetry data reaching destinations**
+   - Check collector logs: `kubectl logs -n o11y deployment/otel-collectors-tailsampling-collector`
+   - Verify `signals` array contains expected telemetry types
+   - Confirm destination endpoints are reachable from cluster
 
 ## Uninstalling
 

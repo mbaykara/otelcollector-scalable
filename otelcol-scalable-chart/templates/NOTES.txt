@@ -22,6 +22,7 @@ Dependencies:
 {{- if .Values.nodeExporter.enabled }}
   ✅ Node-Exporter: node-exporter (daemonset)
 {{- end }}
+
 {{- if index .Values.collectors "receiver" "enabled" }}
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                    OTLP ENDPOINTS                                           │
@@ -34,5 +35,36 @@ Dependencies:
 
 {{- else }}
   ⚠️  Receiver collector is disabled - no application endpoints available
+{{- end }}
+
+{{- $enabledDestinations := list }}
+{{- range $name, $dest := .Values.otlpDestinations }}
+  {{- if $dest.enabled }}
+    {{- $enabledDestinations = append $enabledDestinations $name }}
+  {{- end }}
+{{- end }}
+
+{{- if $enabledDestinations }}
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                OTLP DESTINATIONS                                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Destination │ Endpoint                                        │ Signals                     │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+{{- range $enabledDestinations | sortAlpha }}
+{{- $dest := index $.Values.otlpDestinations . }}
+{{- $truncatedEndpoint := $dest.endpoint }}
+{{- if gt (len $dest.endpoint) 47 }}
+  {{- $truncatedEndpoint = printf "%.44s..." $dest.endpoint }}
+{{- end }}
+{{- $signalsStr := join ", " $dest.signals }}
+{{- if gt (len $signalsStr) 27 }}
+  {{- $signalsStr = printf "%.24s..." $signalsStr }}
+{{- end }}
+│ {{ printf "%-11s" (. | title) }} │ {{ printf "%-47s" $truncatedEndpoint }} │ {{ printf "%-27s" $signalsStr }} │
+{{- end }}
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+{{- else }}
+  ⚠️  No OTLP destinations configured
 {{- end }}
 

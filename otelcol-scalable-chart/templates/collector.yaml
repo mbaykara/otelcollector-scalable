@@ -28,14 +28,6 @@ spec:
   {{- end }}
   resources:
     {{- toYaml $mergedCollector.resources | nindent 4 }}
-  {{- if $.Values.readinessProbe.enabled }}
-  readinessProbe:
-    httpGet:
-      path: /
-      port: 13133
-    initialDelaySeconds: {{ $.Values.readinessProbe.initialDelaySeconds | default 15 }}
-    periodSeconds: {{ $.Values.readinessProbe.periodSeconds | default 5 }}
-  {{- end }}
   {{- if has "prometheus" $mergedCollector.config.receivers }}
   targetAllocator:
     enabled: true
@@ -171,7 +163,7 @@ spec:
         exclude_dimensions: ['status.code']
         dimensions_cache_size: 1500
         aggregation_temporality: "AGGREGATION_TEMPORALITY_CUMULATIVE"
-        metrics_flush_interval: 15s
+        metrics_flush_interval: 60s
       {{- end }}
       {{- if eq $name "servicegraph" }}
       servicegraph:
@@ -448,17 +440,25 @@ spec:
             ports:
               - 4317
       {{- else }}
-      otlphttp/grafanacloud:
-        endpoint: {{ $.Values.grafanaCloud.endpoint }}
+      {{- range $destName, $dest := $.Values.otlpDestinations }}
+      {{- if $dest.enabled }}
+      otlphttp/{{ $destName }}:
+        endpoint: {{ $dest.endpoint }}
         auth:
-          authenticator: basicauth/grafanacloud
+          authenticator: basicauth/{{ $destName }}
+      {{- end }}
+      {{- end }}
       {{- end }}
     
     extensions:
-      basicauth/grafanacloud:
+      {{- range $destName, $dest := $.Values.otlpDestinations }}
+      {{- if $dest.enabled }}
+      basicauth/{{ $destName }}:
         client_auth:
-          username: ${env:GRAFANA_USERNAME}
-          password: ${env:GRAFANA_PASSWORD}
+          username: ${env:{{ upper $destName }}_USERNAME}
+          password: ${env:{{ upper $destName }}_PASSWORD}
+      {{- end }}
+      {{- end }}
       health_check:
         endpoint: 0.0.0.0:13133
       {{- if eq $name "receiver" }}
@@ -468,7 +468,17 @@ spec:
       {{- end }}
     
     service:
-      extensions: [basicauth/grafanacloud, health_check{{- if eq $name "receiver" }}, file_storage/loadbalancing{{- end }}]
+      extensions: [{{- $extensions := list -}}
+      {{- range $destName, $dest := $.Values.otlpDestinations -}}
+        {{- if $dest.enabled -}}
+          {{- $extensions = append $extensions (printf "basicauth/%s" $destName) -}}
+        {{- end -}}
+      {{- end -}}
+      {{- $extensions = append $extensions "health_check" -}}
+      {{- if eq $name "receiver" -}}
+        {{- $extensions = append $extensions "file_storage/loadbalancing" -}}
+      {{- end -}}
+      {{- join ", " $extensions }}]
       pipelines:
         {{- if eq $name "receiver" }}
         traces:
@@ -483,11 +493,23 @@ spec:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, resource/add_collector_info, tail_sampling, batch]
-          exporters: [otlphttp/grafanacloud]
+          exporters: [{{- $traceExporters := list -}}
+          {{- range $destName, $dest := $.Values.otlpDestinations -}}
+            {{- if and $dest.enabled (has "traces" $dest.signals) -}}
+              {{- $traceExporters = append $traceExporters (printf "otlphttp/%s" $destName) -}}
+            {{- end -}}
+          {{- end -}}
+          {{- join ", " $traceExporters }}]
         logs:
           receivers: [otlp]
           processors: [memory_limiter, resource/add_collector_info, batch]
-          exporters: [otlphttp/grafanacloud]
+          exporters: [{{- $logExporters := list -}}
+          {{- range $destName, $dest := $.Values.otlpDestinations -}}
+            {{- if and $dest.enabled (has "logs" $dest.signals) -}}
+              {{- $logExporters = append $logExporters (printf "otlphttp/%s" $destName) -}}
+            {{- end -}}
+          {{- end -}}
+          {{- join ", " $logExporters }}]
         {{- else if eq $name "spanmetrics" }}
         traces:
           receivers: [otlp]
@@ -496,7 +518,13 @@ spec:
         metrics/spanmetrics:
           receivers: [spanmetrics]
           processors: [memory_limiter, resource/add_collector_info, batch]
-          exporters: [otlphttp/grafanacloud]
+          exporters: [{{- $metricExporters := list -}}
+          {{- range $destName, $dest := $.Values.otlpDestinations -}}
+            {{- if and $dest.enabled (has "metrics" $dest.signals) -}}
+              {{- $metricExporters = append $metricExporters (printf "otlphttp/%s" $destName) -}}
+            {{- end -}}
+          {{- end -}}
+          {{- join ", " $metricExporters }}]
         {{- else if eq $name "servicegraph" }}
         traces:
           receivers: [otlp]
@@ -505,7 +533,13 @@ spec:
         metrics/servicegraph:
           receivers: [servicegraph]
           processors: [batch]
-          exporters: [otlphttp/grafanacloud]
+          exporters: [{{- $metricExporters := list -}}
+          {{- range $destName, $dest := $.Values.otlpDestinations -}}
+            {{- if and $dest.enabled (has "metrics" $dest.signals) -}}
+              {{- $metricExporters = append $metricExporters (printf "otlphttp/%s" $destName) -}}
+            {{- end -}}
+          {{- end -}}
+          {{- join ", " $metricExporters }}]
         {{- else }}
         metrics:
           receivers: {{ $mergedCollector.config.receivers | toJson }}
@@ -539,16 +573,20 @@ spec:
       fieldRef:
         fieldPath: spec.nodeName
   {{- end }}
-  - name: GRAFANA_USERNAME
+  {{- range $destName, $dest := $.Values.otlpDestinations }}
+  {{- if $dest.enabled }}
+  - name: {{ upper $destName }}_USERNAME
     valueFrom:
       secretKeyRef:
-        key: username
-        name: {{ $.Values.grafanaCloud.authSecretName }}
-  - name: GRAFANA_PASSWORD
+        key: {{ $dest.usernameKey }}
+        name: {{ $dest.authSecretName }}
+  - name: {{ upper $destName }}_PASSWORD
     valueFrom:
       secretKeyRef:
-        key: password
-        name: {{ $.Values.grafanaCloud.authSecretName }}
+        key: {{ $dest.passwordKey }}
+        name: {{ $dest.authSecretName }}
+  {{- end }}
+  {{- end }}
 
   {{- if or $mergedCollector.volumeMounts (eq $name "receiver") (eq $name "node-metrics") }}
   volumeMounts:

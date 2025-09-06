@@ -21,17 +21,35 @@ Validate required global configuration
 {{- end -}}
 
 {{/*
-Validate Grafana Cloud configuration
+Validate OTLP Destinations configuration
 */}}
-{{- define "otel-collectors.validateGrafanaCloud" -}}
-{{- if not .Values.grafanaCloud.endpoint -}}
-{{- fail "ERROR: grafanaCloud.endpoint is required and cannot be empty" -}}
+{{- define "otel-collectors.validateOtlpDestinations" -}}
+{{- $enabledDestinations := 0 -}}
+{{- range $destName, $dest := .Values.otlpDestinations -}}
+{{- if $dest.enabled -}}
+  {{- $enabledDestinations = add $enabledDestinations 1 -}}
+  {{- if not $dest.endpoint -}}
+    {{- fail (printf "ERROR: otlpDestinations.%s.endpoint is required and cannot be empty" $destName) -}}
+  {{- end -}}
+  {{- if not (hasPrefix "http" $dest.endpoint) -}}
+    {{- fail (printf "ERROR: otlpDestinations.%s.endpoint must use HTTP or HTTPS protocol" $destName) -}}
+  {{- end -}}
+  {{- if not $dest.authSecretName -}}
+    {{- fail (printf "ERROR: otlpDestinations.%s.authSecretName is required and cannot be empty" $destName) -}}
+  {{- end -}}
+  {{- if not $dest.usernameKey -}}
+    {{- fail (printf "ERROR: otlpDestinations.%s.usernameKey is required and cannot be empty" $destName) -}}
+  {{- end -}}
+  {{- if not $dest.passwordKey -}}
+    {{- fail (printf "ERROR: otlpDestinations.%s.passwordKey is required and cannot be empty" $destName) -}}
+  {{- end -}}
+  {{- if not $dest.signals -}}
+    {{- fail (printf "ERROR: otlpDestinations.%s.signals is required and cannot be empty" $destName) -}}
+  {{- end -}}
 {{- end -}}
-{{- if not (hasPrefix "https://" .Values.grafanaCloud.endpoint) -}}
-{{- fail "ERROR: grafanaCloud.endpoint must use HTTPS protocol" -}}
 {{- end -}}
-{{- if not .Values.grafanaCloud.authSecretName -}}
-{{- fail "ERROR: grafanaCloud.authSecretName is required and cannot be empty" -}}
+{{- if eq $enabledDestinations 0 -}}
+  {{- fail "ERROR: At least one OTLP destination must be enabled" -}}
 {{- end -}}
 {{- end -}}
 
@@ -157,7 +175,7 @@ Run all critical validations
 */}}
 {{- define "otel-collectors.runValidations" -}}
 {{- include "otel-collectors.validateGlobal" . -}}
-{{- include "otel-collectors.validateGrafanaCloud" . -}}
+{{- include "otel-collectors.validateOtlpDestinations" . -}}
 {{- include "otel-collectors.validateCollectorModes" . -}}
 {{- include "otel-collectors.validateReplicas" . -}}
 {{- include "otel-collectors.validateTailsampling" . -}}

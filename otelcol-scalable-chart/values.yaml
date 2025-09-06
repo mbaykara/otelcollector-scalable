@@ -6,7 +6,39 @@ global:
   environment: "production"
   namespace: o11y
 
-## Grafana Cloud Configuration
+## Multiple OTLP Destinations Configuration
+## Each destination can handle traces, metrics, and/or logs via OTLP protocol
+otlpDestinations:
+  # Primary destination (backward compatibility with grafanaCloud)
+  grafanaCloud:
+    enabled: true
+    endpoint: ""
+    authSecretName: ""
+    usernameKey: "username" 
+    passwordKey: "password"
+    signals: ["traces", "metrics", "logs"]  # Which signals to send to this destination
+    
+  # Additional OTLP destinations can be added here
+  # Examples:
+  # jaeger:
+  #   enabled: false
+  #   endpoint: "http://jaeger:4318"
+  #   authSecretName: "jaeger-auth"
+  #   signals: ["traces"]
+  #
+  # loki:
+  #   enabled: false  
+  #   endpoint: "http://loki:3100/otlp"
+  #   authSecretName: "loki-auth"
+  #   signals: ["logs"]
+  #
+  # prometheus:
+  #   enabled: false
+  #   endpoint: "http://prometheus:3100/otlp"
+  #   authSecretName: "prometheus-auth" 
+  #   signals: ["metrics"]
+
+## Legacy Grafana Cloud Configuration (deprecated, use otlpDestinations.grafanaCloud instead)
 grafanaCloud:
   endpoint: ""
   authSecretName: ""
@@ -30,6 +62,7 @@ collectorsCommon:
 
 readinessProbe:
   enabled: true
+
 ## Application Observability Configuration
 applicationObservability:
   receiver:
