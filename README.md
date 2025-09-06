@@ -2,7 +2,7 @@
 
 A comprehensive Helm chart for deploying a production-ready, scalable OpenTelemetry Collector stack on Kubernetes with Grafana Cloud integration.
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 This chart deploys a multi-tier OpenTelemetry Collector architecture optimized for high-throughput observability data processing:
 
@@ -27,15 +27,15 @@ graph TD
     style F fill:#ffebee
 ```
 
-## 🎯 Key Features
+## Key Features
 
-### 📊 **Application Observability**
+### **Application Observability**
 - **Receiver**: Entry point with load balancing and trace enrichment
 - **Tail Sampling**: Flexible, configurable sampling policies
 - **Span Metrics**: RED metrics generation from traces
 - **Service Graph**: Service topology and dependencies
 
-### 🖥️ **Infrastructure Monitoring**
+### **Infrastructure Monitoring**
 - **Cluster Metrics**: Kubernetes API metrics and kube-state-metrics
 - **Node Metrics**: kubelet stats and resource utilization
 
@@ -44,7 +44,7 @@ graph TD
 - **Flexible Policies**: Support for all OpenTelemetry tail sampling policy types
 - **Component-Specific Configs**: Isolated configuration per collector
 
-## 📦 Components
+## Components
 
 | Component | Purpose | Deployment | Resources |
 |-----------|---------|------------|-----------|
@@ -55,7 +55,7 @@ graph TD
 | **cluster-metrics** | K8s cluster monitoring | StatefulSet (3 replicas) | 2Gi mem, 1 CPU |
 | **node-metrics** | Node resource monitoring | DaemonSet | 256Mi mem, 200m CPU |
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -102,7 +102,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-stack-receiver-collector.o11y.svc.cluste
 OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-stack-receiver-collector.o11y.svc.cluster.local:4318
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 ### Transform Processors
 
