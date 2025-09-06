@@ -18,7 +18,7 @@ graph TD
     G[Cluster Metrics] -->|K8s Metrics| F
     H[Node Metrics] -->|Node/Pod Stats| F
     
-    F -->|Traces| I[Grafana Cloud]
+    F -->|Metrics,Logs,Traces,Profiles| I[Grafana Cloud]
     F -->|Traces| T[Tempo]
     F -->|Metrics| K[Prometheus]
     F -->|Logs| L[Loki]
