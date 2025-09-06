@@ -5,14 +5,14 @@
   {{- end }}
 {{- end }}
 
-🎉 OpenTelemetry Collector Stack successfully deployed!
+🎉 Scalable OpenTelemetry Collectors successfully deployed!
 
 DEPLOYED COMPONENTS:
 
 Collectors:
 {{- range $enabledCollectors | sortAlpha }}
   {{- $collector := index $.Values.collectors . }}
-  ✅ {{ . | title }} Collector: {{ $.Release.Name }}-{{ . }} ({{ $collector.mode }})
+  ✅ {{ . | title }} Collector: {{ $.Release.Name }}-{{ . }} ({{ $collector.mode }}){{- if eq $collector.mode "statefulset" }}{{- end }}
 {{- end }}
 
 Dependencies:
@@ -27,9 +27,9 @@ Dependencies:
 
 {{- if index .Values.collectors "receiver" "enabled" }}
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                    OTLP ENDPOINTS                                              │
+│                                    OTLP ENDPOINTS                                           │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Protocol │ Port │                            FQDN                                            │
+│ Protocol │ Port │                            FQDN                                           │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │   gRPC   │ 4317 │ {{ .Release.Name }}-receiver-collector.{{ .Values.global.namespace }}.svc.cluster.local:4317 │
 │   HTTP   │ 4318 │ {{ .Release.Name }}-receiver-collector.{{ .Values.global.namespace }}.svc.cluster.local:4318 │

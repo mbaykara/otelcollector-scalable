@@ -358,8 +358,24 @@ spec:
       {{- if eq $name "receiver" }}
       loadbalancing/tailsampling:
         routing_key: "traceID"
+        # Loadbalancing-level resiliency for elastic environments (k8s scale events)
+        timeout: 10s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+        sending_queue:
+          enabled: true
+          num_consumers: 2
+          queue_size: 1000
+          storage: file_storage/loadbalancing
         protocol:
           otlp:
+            # OTLP-level resiliency for temporary backend problems
+            timeout: 1s
+            sending_queue:
+              enabled: true
             tls:
               insecure: true
         resolver:
@@ -369,8 +385,24 @@ spec:
               - 4317
       loadbalancing/spanmetrics:
         routing_key: "service"
+        # Loadbalancing-level resiliency for elastic environments (k8s scale events)
+        timeout: 10s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+        sending_queue:
+          enabled: true
+          num_consumers: 2
+          queue_size: 1000
+          storage: file_storage/loadbalancing
         protocol:
           otlp:
+            # OTLP-level resiliency for temporary backend problems
+            timeout: 1s
+            sending_queue:
+              enabled: true
             tls:
               insecure: true
         resolver:
@@ -380,8 +412,24 @@ spec:
               - 4317
       loadbalancing/servicegraph:
         routing_key: "traceID"
+        # Loadbalancing-level resiliency for elastic environments (k8s scale events)
+        timeout: 10s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+        sending_queue:
+          enabled: true
+          num_consumers: 2
+          queue_size: 1000
+          storage: file_storage/loadbalancing
         protocol:
           otlp:
+            # OTLP-level resiliency for temporary backend problems
+            timeout: 1s
+            sending_queue:
+              enabled: true
             tls:
               insecure: true
         resolver:
@@ -403,9 +451,14 @@ spec:
           password: ${env:GRAFANA_PASSWORD}
       health_check:
         endpoint: 0.0.0.0:13133
+      {{- if eq $name "receiver" }}
+      file_storage/loadbalancing:
+        directory: /var/lib/storage/loadbalancing
+        timeout: 10s
+      {{- end }}
     
     service:
-      extensions: [basicauth/grafanacloud, health_check]
+      extensions: [basicauth/grafanacloud, health_check{{- if eq $name "receiver" }}, file_storage/loadbalancing{{- end }}]
       pipelines:
         {{- if eq $name "receiver" }}
         traces:
@@ -492,6 +545,10 @@ spec:
   {{- if $mergedCollector.volumeMounts }}
     {{- toYaml $mergedCollector.volumeMounts | nindent 2 }}
   {{- end }}
+  {{- if eq $name "receiver" }}
+  - name: loadbalancing-storage
+    mountPath: /var/lib/storage/loadbalancing
+  {{- end }}
   {{- if eq $name "node-metrics" }}
   - name: proc
     mountPath: /host/proc
@@ -506,6 +563,10 @@ spec:
   volumes:
   {{- if $mergedCollector.volumes }}
     {{- toYaml $mergedCollector.volumes | nindent 2 }}
+  {{- end }}
+  {{- if eq $name "receiver" }}
+  - name: loadbalancing-storage
+    emptyDir: {}
   {{- end }}
   {{- if eq $name "node-metrics" }}
   - name: proc
