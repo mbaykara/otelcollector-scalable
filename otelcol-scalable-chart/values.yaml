@@ -342,6 +342,27 @@ nodeExporter:
 ## RBAC
 rbac:
   create: true
+
+## Validation
+validation:
+  enabled: true
+  skipOperatorCheck: false
+  skipConnectivityTest: false
+
+## Health Probes
+healthProbes:
+  enabled: true
+  readiness:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 3
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
   
 ## Service Account
 serviceAccount:

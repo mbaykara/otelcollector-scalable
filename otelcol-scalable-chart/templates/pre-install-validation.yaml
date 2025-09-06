@@ -1,0 +1,111 @@
+{{- if .Values.validation.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-pre-install-validation
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "otel-collectors.labels" . | nindent 4 }}
+    component: pre-install-validation
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ .Release.Name }}-validation
+  containers:
+  - name: validation
+    image: bitnami/kubectl:latest
+    imagePullPolicy: IfNotPresent
+    command:
+    - /bin/bash
+    - -c
+    - |
+      set -e
+      echo "🔍 Running pre-installation validation..."
+      
+      # Check if OpenTelemetry Operator is installed
+      echo "Checking OpenTelemetry Operator CRDs..."
+      if ! kubectl get crd opentelemetrycollectors.opentelemetry.io >/dev/null 2>&1; then
+        echo "❌ ERROR: OpenTelemetry Operator CRDs not found!"
+        echo "Please install the OpenTelemetry Operator first:"
+        echo "kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml"
+        exit 1
+      fi
+      echo "✅ OpenTelemetry Operator CRDs found"
+      
+      # Check if the operator is running
+      echo "Checking OpenTelemetry Operator pod..."
+      if ! kubectl get pods -n opentelemetry-operator-system -l app.kubernetes.io/name=opentelemetry-operator --field-selector=status.phase=Running >/dev/null 2>&1; then
+        echo "⚠️  WARNING: OpenTelemetry Operator may not be running"
+        echo "Please verify the operator is deployed and healthy"
+      else
+        echo "✅ OpenTelemetry Operator is running"
+      fi
+      
+      # Check if Grafana Cloud secret exists (if not creating it)
+      {{- if not .Values.grafanaCloud.createSecret }}
+      echo "Checking Grafana Cloud authentication secret..."
+      if ! kubectl get secret {{ .Values.grafanaCloud.authSecretName }} -n {{ .Values.global.namespace }} >/dev/null 2>&1; then
+        echo "❌ ERROR: Grafana Cloud secret '{{ .Values.grafanaCloud.authSecretName }}' not found!"
+        echo "Please create the secret with username and password keys:"
+        echo "kubectl create secret generic {{ .Values.grafanaCloud.authSecretName }} \\"
+        echo "  --from-literal=username=YOUR_USERNAME \\"
+        echo "  --from-literal=password=YOUR_PASSWORD \\"
+        echo "  -n {{ .Values.global.namespace }}"
+        exit 1
+      fi
+      echo "✅ Grafana Cloud secret found"
+      {{- end }}
+      
+      # Test Grafana Cloud connectivity
+      {{- if not .Values.validation.skipConnectivityTest }}
+      echo "Testing Grafana Cloud connectivity..."
+      if command -v curl >/dev/null 2>&1; then
+        if curl -s --connect-timeout 10 -I "{{ .Values.grafanaCloud.endpoint }}" | grep -q "HTTP/"; then
+          echo "✅ Grafana Cloud endpoint is reachable"
+        else
+          echo "⚠️  WARNING: Cannot reach Grafana Cloud endpoint {{ .Values.grafanaCloud.endpoint }}"
+          echo "Please verify network connectivity and endpoint URL"
+        fi
+      else
+        echo "⚠️  WARNING: curl not available, skipping connectivity test"
+      fi
+      {{- else }}
+      echo "⏭️  Skipping connectivity test (validation.skipConnectivityTest=true)"
+      {{- end }}
+      
+      # Check namespace exists
+      echo "Checking target namespace..."
+      if ! kubectl get namespace {{ .Values.global.namespace }} >/dev/null 2>&1; then
+        echo "❌ ERROR: Namespace '{{ .Values.global.namespace }}' does not exist!"
+        echo "Please create the namespace:"
+        echo "kubectl create namespace {{ .Values.global.namespace }}"
+        exit 1
+      fi
+      echo "✅ Target namespace exists"
+      
+      # Check resource quotas if any
+      echo "Checking resource quotas..."
+      if kubectl get resourcequota -n {{ .Values.global.namespace }} >/dev/null 2>&1; then
+        echo "⚠️  WARNING: ResourceQuotas detected in namespace"
+        echo "Please ensure sufficient resources are available for collectors"
+        kubectl get resourcequota -n {{ .Values.global.namespace }}
+      else
+        echo "✅ No resource quotas limiting deployment"
+      fi
+      
+      # Validate node resources for DaemonSet
+      {{- if index .Values.collectors "node-metrics" "enabled" }}
+      echo "Checking node resources for DaemonSet deployment..."
+      NODE_COUNT=$(kubectl get nodes --no-headers | wc -l)
+      if [ "$NODE_COUNT" -eq 0 ]; then
+        echo "❌ ERROR: No nodes found for DaemonSet deployment!"
+        exit 1
+      fi
+      echo "✅ Found $NODE_COUNT nodes for DaemonSet deployment"
+      {{- end }}
+      
+      echo "🎉 All validations passed! Ready for deployment."
+{{- end }}

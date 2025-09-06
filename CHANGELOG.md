@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **File Storage Extension**: Added persistent storage support for loadbalancing queues
 - **Volume Management**: Added persistent volume mounts for queue storage
 - **Enhanced NOTES Template**: Updated deployment notes to show stateful collector indicators
+- **Critical Validation System**:
+  - Template validation for required fields and configuration consistency
+  - Pre-install validation hooks to check dependencies and prerequisites
+  - Health checks and probes for automatic recovery
+  - Mode enforcement validation for stateful components
+  - Post-deployment validation tests
 
 ### Changed
 - **Collector Modes**:

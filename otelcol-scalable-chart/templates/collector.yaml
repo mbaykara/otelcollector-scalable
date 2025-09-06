@@ -1,3 +1,5 @@
+{{- /* Run critical validations before processing */ -}}
+{{- include "otel-collectors.runValidations" . -}}
 {{- range $name, $collector := .Values.collectors }}
 {{- if $collector.enabled }}
 {{- /* Merge collectorsCommon with individual collector settings */ -}}
@@ -26,6 +28,7 @@ spec:
   {{- end }}
   resources:
     {{- toYaml $mergedCollector.resources | nindent 4 }}
+  
   {{- if has "prometheus" $mergedCollector.config.receivers }}
   targetAllocator:
     enabled: true
