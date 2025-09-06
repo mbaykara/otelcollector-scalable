@@ -43,20 +43,20 @@ jobs:
       run: |
         kubectl create namespace o11y
         
-        kubectl create secret generic otlp-grafana-net-auth \
-          --from-literal=username="test-user" \
-          --from-literal=password="test-password" \
-          -n o11y
-        
-        kubectl create secret generic otlp-azure-foobar-auth \
+        kubectl create secret generic test-auth \
           --from-literal=username="test-user" \
           --from-literal=password="test-password" \
           -n o11y
 
+    - name: Deploy observability backends
+      run: |
+        kubectl apply -f test/deploy-backends.yaml
+        kubectl wait --for=condition=available --timeout=300s deployment -n observability
+
     - name: Install Helm chart
       run: |
         cd otelcol-scalable-chart
-        helm install test-release . -f test-values.yml -n o11y --wait --timeout 10m
+        helm install test-release . -f ../test/test-values.yaml -n o11y --wait --timeout 10m
 
     - name: Verify deployment
       run: |
