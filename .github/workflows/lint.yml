@@ -27,4 +27,4 @@ jobs:
     - name: Helm Template Test
       run: |
         cd otelcol-scalable-chart
-        helm template test-release . -f ../test/test-values.yaml
+        helm template test-release . -f ci/test-values.yaml

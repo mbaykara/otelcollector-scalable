@@ -52,7 +52,7 @@ jobs:
       run: |
         # Apply with explicit handling
         set -e
-        kubectl apply -f test/deploy-backends.yaml --validate=false
+        kubectl apply -f otelcol-scalable-chart/ci/deploy-backends.yaml --validate=false
         
         # Wait for deployments to be ready
         echo "Waiting for observability backends to be ready..."
@@ -65,7 +65,7 @@ jobs:
     - name: Install Helm chart
       run: |
         cd otelcol-scalable-chart
-        helm install test-release . -f ../test/test-values.yaml -n o11y --wait --timeout 10m
+        helm install test-release . -f ci/test-values.yaml -n o11y --wait --timeout 10m
 
     - name: Verify deployment
       run: |
