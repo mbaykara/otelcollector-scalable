@@ -12,6 +12,10 @@ validation:
 
 # Multiple destinations using local backends in Kind cluster
 otlpDestinations:
+  # Disable the default grafanaCloud destination
+  grafanaCloud:
+    enabled: false
+  
   tempo:
     enabled: true
     endpoint: "http://tempo:4318"
