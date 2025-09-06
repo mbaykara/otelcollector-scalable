@@ -23,7 +23,7 @@ graph TD
     D -->|RED Metrics| F
     E -->|Service Topology| F
     
-    F -->|Traces| I[Grafana Cloud]
+    F -->|Metrics,Logs,Traces,Profiles| I[Grafana Cloud]
     F -->|Traces| J[Jaeger]
     F -->|Metrics| K[Prometheus]
     F -->|Logs| L[Loki]
