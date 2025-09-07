@@ -249,6 +249,13 @@ collectors:
     type: application
     replicas: 2
     mode: statefulset
+    resources:
+      limits:
+        memory: 8Gi
+        cpu: 500m
+      requests:
+        memory: 1Gi
+        cpu: 200m
     config:
       workloadName: "tailsampling"
       samplingRate: 0.5
@@ -268,7 +275,7 @@ collectors:
       tag: "0.133.0"
     resources:
       limits:
-        memory: 2Gi
+        memory: 8Gi
         cpu: 500m
       requests:
         memory: 1Gi
@@ -290,8 +297,7 @@ collectors:
       tag: "0.133.0"
     resources:
       limits:
-        memory: 2Gi
-        cpu: 500m
+        memory: 8Gi
       requests:
         memory: 1Gi
         cpu: 200m
@@ -383,6 +389,85 @@ validation:
   enabled: true
   skipOperatorCheck: false
   skipConnectivityTest: false
+
+## Security Configuration
+security:
+  # Pod Security Context - Applied at pod level
+  podSecurityContext:
+    runAsUser: 65534         # nobody user
+    runAsGroup: 65534        # nobody group
+    runAsNonRoot: true       # Prevent running as root
+    fsGroup: 65534           # File system group for volume ownership
+    fsGroupChangePolicy: "OnRootMismatch"  # Change ownership only when needed
+    supplementalGroups: []   # Additional groups for the container processes
+    seccompProfile:
+      type: RuntimeDefault   # Use runtime default seccomp profile
+    # SELinux context (uncomment and configure if SELinux is used)
+    # seLinuxOptions:
+    #   level: "s0:c123,c456"
+    # sysctls: []            # Sysctls and their values
+  
+  # Container Security Context - Applied at container level
+  containerSecurityContext:
+    # User and group settings
+    runAsUser: 65534         # Override pod runAsUser if needed
+    runAsGroup: 65534        # Override pod runAsGroup if needed
+    runAsNonRoot: true       # Prevent container from running as root
+    
+    # Privilege settings
+    allowPrivilegeEscalation: false  # Prevent privilege escalation
+    privileged: false               # Ensure container is not privileged
+    
+    # Filesystem settings
+    readOnlyRootFilesystem: true    # Make root filesystem read-only
+    
+    # Linux capabilities - drop all by default
+    capabilities:
+      drop:
+        - ALL                # Drop all capabilities
+      # add: []              # Add only specific capabilities if needed
+      
+    # Security profiles
+    seccompProfile:
+      type: RuntimeDefault   # Use runtime default seccomp profile
+    # AppArmor profile (uncomment if AppArmor is used)
+    # appArmorProfile:
+    #   type: RuntimeDefault
+    # SELinux context (container level override)
+    # seLinuxOptions:
+    #   level: "s0:c123,c456"
+    
+    # Process settings
+    procMount: Default       # How proc filesystem is mounted
+
+  # Advanced Security Settings (optional, environment-specific)
+  advanced:
+    # Pod Security Standards compliance level
+    podSecurityStandard: "restricted"  # baseline, restricted, or privileged
+    
+    # Additional security annotations
+    annotations:
+      # Container runtime security profiles
+      # container.apparmor.security.beta.kubernetes.io/otel-collector: "runtime/default"
+      # seccomp.security.alpha.kubernetes.io/pod: "runtime/default"
+    
+    # Network security
+    hostNetwork: false       # Disable host network access
+    
+    # Volume security
+    allowedVolumeTypes:
+      - configMap
+      - secret  
+      - emptyDir
+      - projected
+      - downwardAPI
+    
+    # Seccomp profiles (if custom profiles are needed)
+    seccompProfiles:
+      custom:
+        type: Localhost
+        localhostProfile: "profiles/audit.json"
+  
 
 ## Health Probes
 healthProbes:

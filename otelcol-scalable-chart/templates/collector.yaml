@@ -32,6 +32,39 @@ spec:
   targetAllocator:
     enabled: true
   {{- end }}
+  # Security Configuration
+  podSecurityContext:
+    {{- toYaml $.Values.security.podSecurityContext | nindent 4 }}
+  securityContext:
+    {{- toYaml $.Values.security.containerSecurityContext | nindent 4 }}
+  
+  # Host network setting
+  hostNetwork: {{ $.Values.security.advanced.hostNetwork }}
+  
+  # Pod annotations for security profiles
+  {{- if $.Values.security.advanced.annotations }}
+  podAnnotations:
+    {{- toYaml $.Values.security.advanced.annotations | nindent 4 }}
+  {{- end }}
+  
+  # Volume mounts for read-only root filesystem
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    - name: cache  
+      mountPath: /cache
+    - name: data
+      mountPath: /var/lib/otelcol
+  volumes:
+    - name: tmp
+      emptyDir:
+        sizeLimit: 100Mi
+    - name: cache
+      emptyDir:
+        sizeLimit: 100Mi  
+    - name: data
+      emptyDir:
+        sizeLimit: 1Gi
   config:
     receivers:
       {{- if has "otlp" $mergedCollector.config.receivers }}

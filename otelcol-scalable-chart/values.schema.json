@@ -1,0 +1,666 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "OpenTelemetry Collector Helm Chart Values Schema",
+  "description": "JSON Schema for validating values.yaml configuration",
+  "type": "object",
+  "required": ["global", "otlpDestinations", "security", "collectors"],
+  "properties": {
+    "global": {
+      "type": "object",
+      "required": ["clusterName", "environment", "namespace"],
+      "properties": {
+        "clusterName": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "Kubernetes cluster name (lowercase alphanumeric and hyphens only)"
+        },
+        "environment": {
+          "type": "string",
+          "enum": ["development", "staging", "production"],
+          "description": "Deployment environment"
+        },
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "Kubernetes namespace (lowercase alphanumeric and hyphens only)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "otlpDestinations": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[a-zA-Z0-9_-]+$": {
+          "type": "object",
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable this OTLP destination"
+            },
+            "endpoint": {
+              "type": "string",
+              "pattern": "^https?://",
+              "description": "OTLP endpoint URL (must use HTTP/HTTPS)"
+            },
+            "authSecretName": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]+$",
+              "description": "Name of Kubernetes secret containing auth credentials"
+            },
+            "usernameKey": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Key in secret for username"
+            },
+            "passwordKey": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Key in secret for password"
+            },
+            "signals": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["traces", "metrics", "logs"]
+              },
+              "uniqueItems": true,
+              "minItems": 1,
+              "description": "Which telemetry signals to send to this destination"
+            }
+          },
+          "if": {
+            "properties": {"enabled": {"const": true}}
+          },
+          "then": {
+            "required": ["endpoint", "authSecretName", "usernameKey", "passwordKey", "signals"]
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "security": {
+      "type": "object",
+      "required": ["podSecurityContext", "containerSecurityContext", "advanced"],
+      "properties": {
+        "podSecurityContext": {
+          "type": "object",
+          "required": ["runAsUser", "runAsGroup", "runAsNonRoot", "fsGroup"],
+          "properties": {
+            "runAsUser": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65534,
+              "description": "User ID to run containers (must be non-root)"
+            },
+            "runAsGroup": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65534,
+              "description": "Group ID to run containers (must be non-root)"
+            },
+            "runAsNonRoot": {
+              "type": "boolean",
+              "const": true,
+              "description": "Must be true for security compliance"
+            },
+            "fsGroup": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65534,
+              "description": "File system group for volume ownership"
+            },
+            "fsGroupChangePolicy": {
+              "type": "string",
+              "enum": ["Always", "OnRootMismatch"],
+              "description": "When to change file system group ownership"
+            },
+            "supplementalGroups": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65534
+              },
+              "uniqueItems": true,
+              "description": "Additional groups for container processes"
+            },
+            "seccompProfile": {
+              "type": "object",
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["RuntimeDefault", "Localhost", "Unconfined"],
+                  "description": "Seccomp profile type"
+                },
+                "localhostProfile": {
+                  "type": "string",
+                  "description": "Path to seccomp profile (required when type is Localhost)"
+                }
+              },
+              "if": {
+                "properties": {"type": {"const": "Localhost"}}
+              },
+              "then": {
+                "required": ["localhostProfile"]
+              },
+              "additionalProperties": false
+            },
+            "seLinuxOptions": {
+              "type": "object",
+              "properties": {
+                "level": {"type": "string"},
+                "role": {"type": "string"},
+                "type": {"type": "string"},
+                "user": {"type": "string"}
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "containerSecurityContext": {
+          "type": "object",
+          "required": ["runAsUser", "runAsGroup", "runAsNonRoot", "allowPrivilegeEscalation", "privileged", "readOnlyRootFilesystem", "capabilities"],
+          "properties": {
+            "runAsUser": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65534,
+              "description": "User ID for container (must be non-root)"
+            },
+            "runAsGroup": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65534,
+              "description": "Group ID for container (must be non-root)"
+            },
+            "runAsNonRoot": {
+              "type": "boolean",
+              "const": true,
+              "description": "Must be true for security compliance"
+            },
+            "allowPrivilegeEscalation": {
+              "type": "boolean",
+              "const": false,
+              "description": "Must be false for security compliance"
+            },
+            "privileged": {
+              "type": "boolean",
+              "const": false,
+              "description": "Must be false for security compliance"
+            },
+            "readOnlyRootFilesystem": {
+              "type": "boolean",
+              "const": true,
+              "description": "Must be true for security compliance"
+            },
+            "capabilities": {
+              "type": "object",
+              "required": ["drop"],
+              "properties": {
+                "drop": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": ["ALL", "AUDIT_CONTROL", "AUDIT_READ", "AUDIT_WRITE", "BLOCK_SUSPEND", "CHOWN", "DAC_OVERRIDE", "DAC_READ_SEARCH", "FOWNER", "FSETID", "IPC_LOCK", "IPC_OWNER", "KILL", "LEASE", "LINUX_IMMUTABLE", "MAC_ADMIN", "MAC_OVERRIDE", "MKNOD", "NET_ADMIN", "NET_BIND_SERVICE", "NET_BROADCAST", "NET_RAW", "SETGID", "SETFCAP", "SETPCAP", "SETUID", "SYS_ADMIN", "SYS_BOOT", "SYS_CHROOT", "SYS_MODULE", "SYS_NICE", "SYS_PACCT", "SYS_PTRACE", "SYS_RAWIO", "SYS_RESOURCE", "SYS_TIME", "SYS_TTY_CONFIG", "SYSLOG", "WAKE_ALARM"]
+                  },
+                  "contains": {"const": "ALL"},
+                  "description": "Must include ALL to drop all capabilities"
+                },
+                "add": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": ["AUDIT_CONTROL", "AUDIT_READ", "AUDIT_WRITE", "BLOCK_SUSPEND", "CHOWN", "DAC_OVERRIDE", "DAC_READ_SEARCH", "FOWNER", "FSETID", "IPC_LOCK", "IPC_OWNER", "KILL", "LEASE", "LINUX_IMMUTABLE", "MAC_ADMIN", "MAC_OVERRIDE", "MKNOD", "NET_ADMIN", "NET_BIND_SERVICE", "NET_BROADCAST", "NET_RAW", "SETGID", "SETFCAP", "SETPCAP", "SETUID", "SYS_ADMIN", "SYS_BOOT", "SYS_CHROOT", "SYS_MODULE", "SYS_NICE", "SYS_PACCT", "SYS_PTRACE", "SYS_RAWIO", "SYS_RESOURCE", "SYS_TIME", "SYS_TTY_CONFIG", "SYSLOG", "WAKE_ALARM"]
+                  },
+                  "uniqueItems": true,
+                  "description": "Capabilities to add back (use sparingly)"
+                }
+              },
+              "additionalProperties": false
+            },
+            "seccompProfile": {
+              "type": "object",
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["RuntimeDefault", "Localhost", "Unconfined"],
+                  "description": "Seccomp profile type"
+                },
+                "localhostProfile": {
+                  "type": "string",
+                  "description": "Path to seccomp profile (required when type is Localhost)"
+                }
+              },
+              "if": {
+                "properties": {"type": {"const": "Localhost"}}
+              },
+              "then": {
+                "required": ["localhostProfile"]
+              },
+              "additionalProperties": false
+            },
+            "procMount": {
+              "type": "string",
+              "enum": ["Default", "Unmasked"],
+              "description": "How proc filesystem is mounted"
+            }
+          },
+          "additionalProperties": false
+        },
+        "advanced": {
+          "type": "object",
+          "required": ["podSecurityStandard", "hostNetwork"],
+          "properties": {
+            "podSecurityStandard": {
+              "type": "string",
+              "enum": ["privileged", "baseline", "restricted"],
+              "description": "Pod Security Standards compliance level"
+            },
+            "annotations": {
+              "type": ["object", "null"],
+              "patternProperties": {
+                "^[a-zA-Z0-9.-/]+$": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "description": "Security-related pod annotations"
+            },
+            "hostNetwork": {
+              "type": "boolean",
+              "const": false,
+              "description": "Must be false for security compliance"
+            },
+            "allowedVolumeTypes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["configMap", "secret", "emptyDir", "projected", "downwardAPI", "persistentVolumeClaim", "hostPath"]
+              },
+              "uniqueItems": true,
+              "description": "Allowed volume types for security"
+            },
+            "seccompProfiles": {
+              "type": "object",
+              "patternProperties": {
+                "^[a-zA-Z0-9_-]+$": {
+                  "type": "object",
+                  "required": ["type"],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": ["RuntimeDefault", "Localhost"]
+                    },
+                    "localhostProfile": {
+                      "type": "string",
+                      "description": "Path to custom seccomp profile"
+                    }
+                  },
+                  "if": {
+                    "properties": {"type": {"const": "Localhost"}}
+                  },
+                  "then": {
+                    "required": ["localhostProfile"]
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "collectors": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[a-zA-Z0-9_-]+$": {
+          "type": "object",
+          "required": ["enabled"],
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable this collector"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["application", "infrastructure"],
+              "description": "Type of collector for RBAC binding"
+            },
+            "replicas": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Number of collector replicas"
+            },
+            "mode": {
+              "type": "string",
+              "enum": ["deployment", "statefulset", "daemonset"],
+              "description": "Deployment mode for the collector"
+            },
+            "resources": {
+              "type": "object",
+              "properties": {
+                "limits": {
+                  "type": "object",
+                  "properties": {
+                    "memory": {
+                      "type": "string",
+                      "pattern": "^[0-9]+\\.?[0-9]*[KMGT]i$",
+                      "description": "Memory limit (e.g., 512Mi, 1Gi, 1.5Gi)"
+                    },
+                    "cpu": {
+                      "type": ["string", "number"],
+                      "description": "CPU limit (e.g., 500m, 1)"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "requests": {
+                  "type": "object",
+                  "properties": {
+                    "memory": {
+                      "type": "string",
+                      "pattern": "^[0-9]+\\.?[0-9]*[KMGT]i$",
+                      "description": "Memory request (e.g., 256Mi, 512Mi, 1.5Gi)"
+                    },
+                    "cpu": {
+                      "type": ["string", "number"],
+                      "description": "CPU request (e.g., 100m, 0.5)"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "config": {
+              "type": "object",
+              "required": ["workloadName"],
+              "properties": {
+                "workloadName": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9-]+$",
+                  "description": "Name identifier for this workload"
+                },
+                "receivers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": ["otlp", "k8s_cluster", "kubeletstats", "prometheus", "filelog"]
+                  },
+                  "uniqueItems": true,
+                  "description": "List of enabled receivers"
+                },
+                "processors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true,
+                  "description": "List of enabled processors"
+                },
+                "exporters": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true,
+                  "description": "List of enabled exporters"
+                },
+                "samplingRate": {
+                  "type": "number",
+                  "minimum": 0.001,
+                  "maximum": 1.0,
+                  "description": "Tail sampling rate (0.001 to 1.0)"
+                },
+                "decisionWait": {
+                  "type": "string",
+                  "pattern": "^[0-9]+[smh]$",
+                  "description": "Tail sampling decision wait time (e.g., 10s, 1m)"
+                },
+                "flushInterval": {
+                  "type": "string",
+                  "pattern": "^[0-9]+[smh]$",
+                  "description": "Service graph flush interval (e.g., 60s, 5m)"
+                }
+              },
+              "additionalProperties": true
+            },
+            "targetAllocator": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Enable target allocator for this collector"
+                }
+              },
+              "additionalProperties": false
+            },
+            "serviceAccount": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]+$",
+              "description": "Service account name for this collector"
+            },
+            "image": {
+              "type": "object",
+              "properties": {
+                "repository": {
+                  "type": "string",
+                  "description": "Container image repository"
+                },
+                "tag": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9.-]+$",
+                  "description": "Container image tag"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "rbac": {
+      "type": "object",
+      "properties": {
+        "create": {
+          "type": "boolean",
+          "description": "Create RBAC resources"
+        }
+      },
+      "additionalProperties": false
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": {
+          "type": "boolean",
+          "description": "Create service account"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Service account name"
+        }
+      },
+      "additionalProperties": false
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable pre-deployment validation"
+        },
+        "skipOperatorCheck": {
+          "type": "boolean",
+          "description": "Skip OpenTelemetry operator validation"
+        },
+        "skipConnectivityTest": {
+          "type": "boolean",
+          "description": "Skip connectivity test validation"
+        }
+      },
+      "additionalProperties": false
+    },
+    "healthProbes": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable health probes"
+        },
+        "readiness": {
+          "type": "object",
+          "properties": {
+            "initialDelaySeconds": {"type": "integer", "minimum": 0},
+            "periodSeconds": {"type": "integer", "minimum": 1},
+            "timeoutSeconds": {"type": "integer", "minimum": 1},
+            "successThreshold": {"type": "integer", "minimum": 1},
+            "failureThreshold": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": false
+        },
+        "liveness": {
+          "type": "object",
+          "properties": {
+            "initialDelaySeconds": {"type": "integer", "minimum": 0},
+            "periodSeconds": {"type": "integer", "minimum": 1},
+            "timeoutSeconds": {"type": "integer", "minimum": 1},
+            "failureThreshold": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "grafanaCloud": {
+      "type": "object",
+      "description": "Legacy Grafana Cloud configuration (deprecated)",
+      "properties": {
+        "endpoint": {"type": "string"},
+        "authSecretName": {"type": "string"},
+        "usernameKey": {"type": "string"},
+        "passwordKey": {"type": "string"},
+        "createSecret": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "collectorsCommon": {
+      "type": "object",
+      "description": "Common configuration for all collectors",
+      "properties": {
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {"type": "string"},
+            "tag": {"type": "string"}
+          },
+          "additionalProperties": false
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "limits": {
+              "type": "object",
+              "properties": {
+                "memory": {"type": "string", "pattern": "^[0-9]+\\.?[0-9]*[KMGT]i$"},
+                "cpu": {"type": ["string", "number"]}
+              },
+              "additionalProperties": false
+            },
+            "requests": {
+              "type": "object",
+              "properties": {
+                "memory": {"type": "string", "pattern": "^[0-9]+\\.?[0-9]*[KMGT]i$"},
+                "cpu": {"type": ["string", "number"]}
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "serviceAccount": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "readinessProbe": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "applicationObservability": {
+      "type": "object",
+      "description": "Application observability configurations",
+      "additionalProperties": true
+    },
+    "allowlists": {
+      "type": "object",
+      "description": "Metric allowlists configuration",
+      "additionalProperties": true
+    },
+    "kubeStateMetrics": {
+      "type": "object",
+      "description": "Kube-state-metrics dependency configuration",
+      "additionalProperties": true
+    },
+    "nodeExporter": {
+      "type": "object", 
+      "description": "Node exporter dependency configuration",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "fullnameOverride": {"type": "string"},
+        "service": {
+          "type": "object",
+          "properties": {
+            "port": {"type": "integer"},
+            "portName": {"type": "string"}
+          },
+          "additionalProperties": true
+        },
+        "hostNetwork": {"type": "boolean", "description": "Node exporter requires host network access"},
+        "hostPID": {"type": "boolean", "description": "Node exporter requires host PID access for process monitoring"}
+      },
+      "additionalProperties": true
+    },
+    "histograms": {
+      "type": "object",
+      "description": "Histogram configuration",
+      "additionalProperties": true
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "description": "Image pull secrets",
+      "items": {"type": "object"}
+    },
+    "commonLabels": {
+      "type": "object",
+      "description": "Common labels applied to all resources",
+      "additionalProperties": {"type": "string"}
+    },
+    "commonAnnotations": {
+      "type": "object", 
+      "description": "Common annotations applied to all resources",
+      "additionalProperties": {"type": "string"}
+    }
+  },
+  "additionalProperties": true
+}

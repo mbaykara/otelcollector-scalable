@@ -1,0 +1,375 @@
+# {{ .Chart.Name | title }}
+
+{{ .Chart.Description }}
+
+**Chart Version:** {{ .Chart.Version }}  
+**Application Version:** {{ .Chart.AppVersion }}
+
+## Overview
+
+This Helm chart deploys a production-ready, scalable OpenTelemetry Collector stack on Kubernetes with comprehensive security hardening and multi-destination OTLP support.
+
+### Architecture
+
+The chart implements a **multi-tier collector architecture** optimized for high-throughput observability:
+
+#### Application Observability Collectors
+{{- range $name, $collector := .Values.collectors }}
+{{- if and $collector.enabled (eq $collector.type "application") }}
+- **{{ $name }}**: {{ $collector.config.workloadName }} ({{ $collector.mode }}, {{ $collector.replicas }} replicas)
+{{- end }}
+{{- end }}
+
+#### Infrastructure Observability Collectors  
+{{- range $name, $collector := .Values.collectors }}
+{{- if and $collector.enabled (eq $collector.type "infrastructure") }}
+- **{{ $name }}**: {{ $collector.config.workloadName }} ({{ $collector.mode }}, {{ $collector.replicas }} replicas)
+{{- end }}
+{{- end }}
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Kubernetes {{ .Capabilities.KubeVersion.Major }}.{{ .Capabilities.KubeVersion.Minor }}+
+- Helm 3.8+
+- OpenTelemetry Operator installed in cluster
+
+### Installation
+
+1. **Create namespace:**
+   ```bash
+   kubectl create namespace {{ .Values.global.namespace }}
+   ```
+
+2. **Create authentication secrets:**
+   {{- range $name, $dest := .Values.otlpDestinations }}
+   {{- if $dest.enabled }}
+   ```bash
+   kubectl create secret generic {{ $dest.authSecretName }} \
+     --from-literal={{ $dest.usernameKey }}=YOUR_USERNAME \
+     --from-literal={{ $dest.passwordKey }}=YOUR_PASSWORD \
+     -n {{ $.Values.global.namespace }}
+   ```
+   {{- end }}
+   {{- end }}
+
+3. **Install the chart:**
+   ```bash
+   helm install {{ .Release.Name }} oci://your-registry/{{ .Chart.Name }} \
+     --set global.clusterName=YOUR_CLUSTER_NAME \
+     {{- range $name, $dest := .Values.otlpDestinations }}
+     {{- if $dest.enabled }}
+     --set otlpDestinations.{{ $name }}.endpoint=YOUR_ENDPOINT \
+     {{- end }}
+     {{- end }}
+     --namespace {{ .Values.global.namespace }}
+   ```
+
+## ⚙️ Configuration
+
+### Global Settings
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `global.clusterName` | Kubernetes cluster identifier | `{{ .Values.global.clusterName }}` |
+| `global.environment` | Deployment environment | `{{ .Values.global.environment }}` |
+| `global.namespace` | Target namespace | `{{ .Values.global.namespace }}` |
+
+### OTLP Destinations
+
+This chart supports multiple OTLP destinations for flexible telemetry routing:
+
+{{- range $name, $dest := .Values.otlpDestinations }}
+{{- if $dest.enabled }}
+#### {{ $name | title }}
+```yaml
+otlpDestinations:
+  {{ $name }}:
+    enabled: {{ $dest.enabled }}
+    endpoint: "{{ $dest.endpoint }}"
+    authSecretName: "{{ $dest.authSecretName }}"
+    signals: {{ $dest.signals | toJson }}
+```
+{{- end }}
+{{- end }}
+
+### 🔒 Security Configuration
+
+The chart implements **Pod Security Standards "restricted" level** with comprehensive hardening:
+
+#### Pod Security Context
+```yaml
+security:
+  podSecurityContext:
+    runAsUser: {{ .Values.security.podSecurityContext.runAsUser }}
+    runAsGroup: {{ .Values.security.podSecurityContext.runAsGroup }}
+    runAsNonRoot: {{ .Values.security.podSecurityContext.runAsNonRoot }}
+    fsGroup: {{ .Values.security.podSecurityContext.fsGroup }}
+    fsGroupChangePolicy: "{{ .Values.security.podSecurityContext.fsGroupChangePolicy }}"
+    seccompProfile:
+      type: {{ .Values.security.podSecurityContext.seccompProfile.type }}
+```
+
+#### Container Security Context
+```yaml
+security:
+  containerSecurityContext:
+    runAsNonRoot: {{ .Values.security.containerSecurityContext.runAsNonRoot }}
+    readOnlyRootFilesystem: {{ .Values.security.containerSecurityContext.readOnlyRootFilesystem }}
+    allowPrivilegeEscalation: {{ .Values.security.containerSecurityContext.allowPrivilegeEscalation }}
+    privileged: {{ .Values.security.containerSecurityContext.privileged }}
+    capabilities:
+      drop: {{ .Values.security.containerSecurityContext.capabilities.drop | toJson }}
+    seccompProfile:
+      type: {{ .Values.security.containerSecurityContext.seccompProfile.type }}
+```
+
+#### Advanced Security Settings
+- **Pod Security Standard**: {{ .Values.security.advanced.podSecurityStandard }}
+- **Host Network Access**: {{ .Values.security.advanced.hostNetwork }}
+- **Allowed Volume Types**: {{ .Values.security.advanced.allowedVolumeTypes | join ", " }}
+
+### Collector Configuration
+
+{{- range $name, $collector := .Values.collectors }}
+{{- if $collector.enabled }}
+#### {{ $name | title }} Collector
+
+**Type:** {{ $collector.type }}  
+**Mode:** {{ $collector.mode }}  
+**Replicas:** {{ $collector.replicas }}
+
+**Resources:**
+```yaml
+resources:
+  limits:
+    memory: {{ $collector.resources.limits.memory }}
+    cpu: {{ $collector.resources.limits.cpu }}
+  requests:
+    memory: {{ $collector.resources.requests.memory }}
+    cpu: {{ $collector.resources.requests.cpu }}
+```
+
+**Configuration:**
+- **Workload Name:** {{ $collector.config.workloadName }}
+- **Receivers:** {{ $collector.config.receivers | join ", " }}
+- **Processors:** {{ $collector.config.processors | join ", " }}
+- **Exporters:** {{ $collector.config.exporters | join ", " }}
+{{- if $collector.config.samplingRate }}
+- **Sampling Rate:** {{ $collector.config.samplingRate }}%
+{{- end }}
+{{- if $collector.config.decisionWait }}
+- **Decision Wait:** {{ $collector.config.decisionWait }}
+{{- end }}
+
+{{- end }}
+{{- end }}
+
+### Health Probes
+
+{{- if .Values.healthProbes.enabled }}
+Health monitoring is **enabled** with the following configuration:
+
+**Readiness Probe:**
+- Initial Delay: {{ .Values.healthProbes.readiness.initialDelaySeconds }}s
+- Period: {{ .Values.healthProbes.readiness.periodSeconds }}s  
+- Timeout: {{ .Values.healthProbes.readiness.timeoutSeconds }}s
+- Failure Threshold: {{ .Values.healthProbes.readiness.failureThreshold }}
+
+**Liveness Probe:**
+- Initial Delay: {{ .Values.healthProbes.liveness.initialDelaySeconds }}s
+- Period: {{ .Values.healthProbes.liveness.periodSeconds }}s
+- Timeout: {{ .Values.healthProbes.liveness.timeoutSeconds }}s
+- Failure Threshold: {{ .Values.healthProbes.liveness.failureThreshold }}
+{{- else }}
+Health monitoring is **disabled**.
+{{- end }}
+
+## 📊 Observability Features
+
+### Metric Collection
+
+The chart includes allowlists for optimized metric collection:
+
+{{- range $name, $allowlist := .Values.allowlists }}
+{{- if $allowlist.enabled }}
+- **{{ $name | title }}**: Enabled
+{{- end }}
+{{- end }}
+
+### Dependencies
+
+{{- if .Values.kubeStateMetrics.enabled }}
+- **Kube-State-Metrics**: {{ .Values.kubeStateMetrics.enabled }} ({{ .Values.kubeStateMetrics.fullnameOverride }})
+{{- end }}
+{{- if .Values.nodeExporter.enabled }}
+- **Node Exporter**: {{ .Values.nodeExporter.enabled }} ({{ .Values.nodeExporter.fullnameOverride }})
+{{- end }}
+
+## 🛠️ Advanced Configuration
+
+### Tail Sampling Policies
+
+Configure intelligent trace sampling with multiple policy types:
+
+```yaml
+applicationObservability:
+  tailsampling:
+    policies:
+      enabled: true
+      list:
+        # Sample all error traces
+        - name: errors-policy
+          type: status_code
+          status_code:
+            status_codes: [ERROR, UNSET]
+        
+        # Sample slow requests (>2s)
+        - name: latency-policy
+          type: latency
+          latency:
+            threshold_ms: 2000
+        
+        # Probabilistic sampling for normal traces
+        - name: probabilistic-policy
+          type: probabilistic
+          probabilistic:
+            sampling_percentage: 5
+```
+
+### Custom Security Profiles
+
+Enable custom security profiles for enhanced protection:
+
+```yaml
+security:
+  advanced:
+    annotations:
+      container.apparmor.security.beta.kubernetes.io/otel-collector: "runtime/default"
+    seccompProfiles:
+      custom:
+        type: Localhost
+        localhostProfile: "profiles/otel-collector.json"
+```
+
+### Resource Optimization
+
+Optimize resource allocation based on throughput requirements:
+
+```yaml
+collectors:
+  receiver:
+    resources:
+      limits:
+        memory: 2Gi    # High memory for ingestion
+        cpu: 1000m
+      requests:
+        memory: 1Gi
+        cpu: 500m
+  
+  tailsampling:
+    replicas: 3        # Scale for decision processing
+    resources:
+      limits:
+        memory: 8Gi    # Large memory for trace buffering
+```
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+1. **Schema Validation Errors**
+   ```bash
+   helm lint ./{{ .Chart.Name }} --strict
+   ```
+
+2. **Security Context Failures**
+   ```bash
+   kubectl describe pod -n {{ .Values.global.namespace }} -l app.kubernetes.io/name={{ .Chart.Name }}
+   ```
+
+3. **OTLP Connectivity Issues**
+   ```bash
+   kubectl logs -n {{ .Values.global.namespace }} deployment/{{ .Release.Name }}-receiver
+   ```
+
+### Validation
+
+The chart includes comprehensive validation to prevent misconfigurations:
+
+{{- if .Values.validation.enabled }}
+- **Pre-deployment validation**: ✅ Enabled
+- **Operator check**: {{ not .Values.validation.skipOperatorCheck | ternary "✅ Enabled" "❌ Disabled" }}
+- **Connectivity test**: {{ not .Values.validation.skipConnectivityTest | ternary "✅ Enabled" "❌ Disabled" }}
+{{- else }}
+- **Validation**: ❌ Disabled
+{{- end }}
+
+## 📝 Values Reference
+
+### Complete Values Schema
+
+The chart uses JSON Schema validation to ensure configuration correctness. Key validation rules:
+
+- **Security**: Non-root users (1-65534), read-only filesystem, no privilege escalation
+- **Resources**: Memory format `512Mi|1Gi|1.5Gi`, CPU limits as strings or numbers
+- **Networking**: HTTPS endpoints only, Kubernetes-valid names
+- **Collectors**: Valid modes (`deployment|statefulset|daemonset`), 1-10 replicas
+
+### Example Production Configuration
+
+```yaml
+global:
+  clusterName: "production-k8s"
+  environment: "production"
+  namespace: "observability"
+
+otlpDestinations:
+  grafanaCloud:
+    enabled: true
+    endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+    authSecretName: "grafana-cloud-credentials"
+    signals: ["traces", "metrics", "logs"]
+
+security:
+  advanced:
+    podSecurityStandard: "restricted"
+
+collectors:
+  receiver:
+    replicas: 3
+    resources:
+      limits:
+        memory: 2Gi
+        cpu: 1
+  
+  tailsampling:
+    replicas: 5
+    resources:
+      limits:
+        memory: 8Gi
+        cpu: 2
+```
+
+## 🤝 Contributing
+
+1. Follow security best practices
+2. Update schema validation for new fields
+3. Test with `helm lint --strict`
+4. Document breaking changes
+
+## 📄 License
+
+{{ if .Chart.Sources }}
+**Sources:** {{ range .Chart.Sources }}{{ . }} {{ end }}
+{{ end }}
+
+**Maintainers:**
+{{- range .Chart.Maintainers }}
+- {{ .Name }} ({{ .Email }})
+{{- end }}
+
+---
+
+Generated with Helm {{ .Capabilities.HelmVersion.Version }} on {{ now | date "2006-01-02 15:04:05 UTC" }}

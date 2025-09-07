@@ -6,8 +6,8 @@ appVersion: 0.133.0
 type: application
 
 maintainers:
-- name: Platform Team
-  email: platform@company.com
+- name: Mehmet Ali Baykara
+  email: mehmetalibaykara@gmail.com
 
 keywords:
 - opentelemetry
@@ -18,14 +18,14 @@ keywords:
 
 dependencies:
 - name: kube-state-metrics
-  version: "5.25.1"
+  version: "6.3.0"
   repository: "https://prometheus-community.github.io/helm-charts"
   condition: kubeStateMetrics.enabled
 - name: prometheus-node-exporter
-  version: "4.39.0"  
+  version: "4.47.3"  
   repository: "https://prometheus-community.github.io/helm-charts"
   condition: nodeExporter.enabled
   alias: nodeExporter
 
 annotations:
-  category: Monitoring
+  category: Observability

@@ -9,29 +9,26 @@ metadata:
     {{- include "otel-collectors.labels" . | nindent 4 }}
 
 ---
+# ClusterRole for infrastructure monitoring (cluster-metrics, node-metrics collectors)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ .Release.Name }}-cluster-role
+  name: {{ .Release.Name }}-infrastructure-role
   labels:
     {{- include "otel-collectors.labels" . | nindent 4 }}
 rules:
+# Required for k8s_cluster receiver
 - apiGroups: [""]
   resources:
     - nodes
-    - nodes/proxy
-    - nodes/metrics
-    - nodes/stats
+    - nodes/metrics  
     - services
     - endpoints
     - pods
-    - ingresses
     - configmaps
     - namespaces
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["extensions"]
-  resources:
-    - ingresses
+    - replicationcontrollers
+    - resourcequotas
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
   resources:
@@ -49,40 +46,79 @@ rules:
   resources:
     - horizontalpodautoscalers
   verbs: ["get", "list", "watch"]
-- apiGroups: [""]
+- apiGroups: ["networking.k8s.io"]
   resources:
-    - replicationcontrollers
-    - resourcequotas
+    - ingresses
   verbs: ["get", "list", "watch"]
 
 ---
+# ClusterRole for kubelet stats (node-metrics collector)
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: ClusterRole
 metadata:
-  name: {{ .Release.Name }}-cluster-role-binding
+  name: {{ .Release.Name }}-kubelet-role
   labels:
     {{- include "otel-collectors.labels" . | nindent 4 }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ .Release.Name }}-cluster-role
-subjects:
-- kind: ServiceAccount
-  name: {{ .Values.serviceAccount.name }}
-  namespace: {{ .Values.global.namespace }}
+rules:
+# Required for kubeletstats receiver
+- apiGroups: [""]
+  resources:
+    - nodes/stats
+    - nodes/proxy
+  verbs: ["get"]
 
 ---
-# Additional ClusterRoleBinding for Target Allocator service accounts
+# ClusterRoleBinding for infrastructure collectors (cluster-metrics, node-metrics)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ .Release.Name }}-target-allocator-binding
+  name: {{ .Release.Name }}-infrastructure-binding
   labels:
     {{- include "otel-collectors.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ .Release.Name }}-cluster-role
+  name: {{ .Release.Name }}-infrastructure-role
+subjects:
+{{- range $name, $collector := .Values.collectors }}
+{{- if and $collector.enabled (eq $collector.type "infrastructure") }}
+- kind: ServiceAccount
+  name: {{ $.Release.Name }}-{{ $name }}
+  namespace: {{ $.Values.global.namespace }}
+{{- end }}
+{{- end }}
+
+---
+# ClusterRoleBinding for kubelet stats (node-metrics collector)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-kubelet-binding
+  labels:
+    {{- include "otel-collectors.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-kubelet-role
+subjects:
+{{- if index .Values.collectors "node-metrics" "enabled" }}
+- kind: ServiceAccount
+  name: {{ .Release.Name }}-node-metrics
+  namespace: {{ .Values.global.namespace }}
+{{- end }}
+
+---
+# ClusterRoleBinding for Target Allocator service accounts (infrastructure collectors only)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-ta-infrastructure-binding
+  labels:
+    {{- include "otel-collectors.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-infrastructure-role
 subjects:
 {{- range $name, $collector := .Values.collectors }}
 {{- if $collector.enabled }}

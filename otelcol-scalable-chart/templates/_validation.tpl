@@ -123,13 +123,13 @@ Validate resource configurations
 {{- range $name, $collector := .Values.collectors -}}
 {{- if and $collector.enabled $collector.resources -}}
   {{- if $collector.resources.requests -}}
-    {{- if and $collector.resources.requests.memory (not (regexMatch "^[0-9]+[KMGT]i$" $collector.resources.requests.memory)) -}}
-      {{- fail (printf "ERROR: collector '%s' memory request must be in format like '512Mi', '1Gi'" $name) -}}
+    {{- if and $collector.resources.requests.memory (not (regexMatch "^[0-9]+\\.?[0-9]*[KMGT]i$" $collector.resources.requests.memory)) -}}
+      {{- fail (printf "ERROR: collector '%s' memory request must be in format like '512Mi', '1Gi', '1.5Gi'" $name) -}}
     {{- end -}}
   {{- end -}}
   {{- if $collector.resources.limits -}}
-    {{- if and $collector.resources.limits.memory (not (regexMatch "^[0-9]+[KMGT]i$" $collector.resources.limits.memory)) -}}
-      {{- fail (printf "ERROR: collector '%s' memory limit must be in format like '512Mi', '1Gi'" $name) -}}
+    {{- if and $collector.resources.limits.memory (not (regexMatch "^[0-9]+\\.?[0-9]*[KMGT]i$" $collector.resources.limits.memory)) -}}
+      {{- fail (printf "ERROR: collector '%s' memory limit must be in format like '512Mi', '1Gi', '1.5Gi'" $name) -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}
@@ -171,6 +171,53 @@ Validate receiver collector dependency
 {{- end -}}
 
 {{/*
+Validate security configuration
+*/}}
+{{- define "otel-collectors.validateSecurity" -}}
+{{- /* Validate pod security context */ -}}
+{{- if not .Values.security.podSecurityContext.runAsNonRoot -}}
+  {{- fail "ERROR: security.podSecurityContext.runAsNonRoot must be true for security compliance" -}}
+{{- end -}}
+{{- if eq (.Values.security.podSecurityContext.runAsUser | int) 0 -}}
+  {{- fail "ERROR: security.podSecurityContext.runAsUser cannot be 0 (root user)" -}}
+{{- end -}}
+{{- if not (has .Values.security.podSecurityContext.seccompProfile.type (list "RuntimeDefault" "Localhost")) -}}
+  {{- fail "ERROR: security.podSecurityContext.seccompProfile.type must be 'RuntimeDefault' or 'Localhost'" -}}
+{{- end -}}
+
+{{- /* Validate container security context */ -}}
+{{- if not .Values.security.containerSecurityContext.runAsNonRoot -}}
+  {{- fail "ERROR: security.containerSecurityContext.runAsNonRoot must be true for security compliance" -}}
+{{- end -}}
+{{- if not .Values.security.containerSecurityContext.readOnlyRootFilesystem -}}
+  {{- fail "ERROR: security.containerSecurityContext.readOnlyRootFilesystem must be true for security compliance" -}}
+{{- end -}}
+{{- if .Values.security.containerSecurityContext.allowPrivilegeEscalation -}}
+  {{- fail "ERROR: security.containerSecurityContext.allowPrivilegeEscalation must be false" -}}
+{{- end -}}
+{{- if .Values.security.containerSecurityContext.privileged -}}
+  {{- fail "ERROR: security.containerSecurityContext.privileged must be false" -}}
+{{- end -}}
+{{- if eq (.Values.security.containerSecurityContext.runAsUser | int) 0 -}}
+  {{- fail "ERROR: security.containerSecurityContext.runAsUser cannot be 0 (root user)" -}}
+{{- end -}}
+{{- if not (has "ALL" .Values.security.containerSecurityContext.capabilities.drop) -}}
+  {{- fail "ERROR: security.containerSecurityContext.capabilities.drop must include 'ALL'" -}}
+{{- end -}}
+{{- if not (has .Values.security.containerSecurityContext.seccompProfile.type (list "RuntimeDefault" "Localhost")) -}}
+  {{- fail "ERROR: security.containerSecurityContext.seccompProfile.type must be 'RuntimeDefault' or 'Localhost'" -}}
+{{- end -}}
+
+{{- /* Validate advanced security settings */ -}}
+{{- if .Values.security.advanced.hostNetwork -}}
+  {{- fail "ERROR: security.advanced.hostNetwork must be false for security compliance" -}}
+{{- end -}}
+{{- if not (has .Values.security.advanced.podSecurityStandard (list "baseline" "restricted" "privileged")) -}}
+  {{- fail "ERROR: security.advanced.podSecurityStandard must be 'baseline', 'restricted', or 'privileged'" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Run all critical validations
 */}}
 {{- define "otel-collectors.runValidations" -}}
@@ -180,6 +227,7 @@ Run all critical validations
 {{- include "otel-collectors.validateReplicas" . -}}
 {{- include "otel-collectors.validateTailsampling" . -}}
 {{- include "otel-collectors.validateResources" . -}}
+{{- include "otel-collectors.validateSecurity" . -}}
 {{- include "otel-collectors.validateEnabled" . -}}
 {{- include "otel-collectors.validateReceiverDependency" . -}}
 {{- end -}}
