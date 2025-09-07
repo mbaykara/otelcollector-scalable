@@ -360,7 +360,7 @@ allowlists:
   kubeStateMetrics:
     enabled: true
   nodeExporter:
-    enabled: true
+    enabled: false
   kubeletstats:
     enabled: true
   otelCollector:
@@ -372,7 +372,7 @@ kubeStateMetrics:
   fullnameOverride: "kube-state-metrics"
 
 nodeExporter:
-  enabled: true
+  enabled: false
   fullnameOverride: "node-exporter"
   service:
     port: 9100
