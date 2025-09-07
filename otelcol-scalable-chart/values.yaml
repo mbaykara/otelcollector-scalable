@@ -2,7 +2,7 @@
 
 ## Global settings
 global:
-  clusterName: ""
+  clusterName: "kind-cluster"
   environment: "production"
   namespace: o11y
 
@@ -12,8 +12,8 @@ otlpDestinations:
   # Primary destination (backward compatibility with grafanaCloud)
   grafanaCloud:
     enabled: true
-    endpoint: ""
-    authSecretName: ""
+    endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+    authSecretName: "grafana-cloud-secret"
     usernameKey: "username" 
     passwordKey: "password"
     signals: ["traces", "metrics", "logs"]  # Which signals to send to this destination
