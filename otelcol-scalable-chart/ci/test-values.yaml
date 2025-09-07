@@ -3,7 +3,7 @@
 
 global:
   clusterName: "kind-test"
-  environment: "test"
+  environment: "production"
   namespace: o11y
 
 # Disable pre-install validation for CI
