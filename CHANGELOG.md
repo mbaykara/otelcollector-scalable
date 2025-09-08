@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Collector ID Attribute**: Added `collector.id` datapoint attribute to spanmetrics using pod name from `COLLECTOR_POD_NAME` environment variable
+- **Template Architecture Refactor**: Split monolithic collector template into focused, individual templates:
+  - Application collectors: `receiver-collector.yaml`, `tailsampling-collector.yaml`, `spanmetrics-collector.yaml`, `servicegraph-collector.yaml`
+  - Infrastructure collectors: `cluster-metrics-collector.yaml`, `node-metrics-collector.yaml`
+  - Main templates now serve as documentation dispatchers
 - **Stateful Components Configuration**: Updated `spanmetrics` and `servicegraph` collectors to use `statefulset` mode for proper trace aggregation
 - **Comprehensive Loadbalancing Resiliency**: 
   - Dual-level retry mechanisms (loadbalancing and OTLP levels)
@@ -25,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Post-deployment validation tests
 
 ### Changed
+- **Template Structure**: Refactored from single monolithic collector template to individual, focused templates for better maintainability and debugging
 - **Collector Modes**:
   - `spanmetrics`: Changed from `deployment` to `statefulset`
   - `servicegraph`: Changed from `deployment` to `statefulset`

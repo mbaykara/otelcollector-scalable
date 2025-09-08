@@ -1,0 +1,9 @@
+{{- /* 
+Infrastructure Observability Collectors Template - Dispatcher  
+This file is now empty as infrastructure collectors are handled by specific templates:
+
+- cluster-metrics-collector.yaml (K8s cluster metrics via Prometheus scraping)
+- node-metrics-collector.yaml (Node metrics via kubeletstats and node_exporter)
+
+Each template handles its specific collector based on the collector name and type "infrastructure" in values.yaml
+*/ -}}

@@ -1,0 +1,316 @@
+{{- /* Receiver Collector Template */ -}}
+{{- include "otel-collectors.runValidations" . -}}
+{{- $name := "receiver" }}
+{{- $collector := index .Values.collectors $name }}
+{{- if and $collector.enabled (eq $collector.type "application") (eq $name "receiver") }}
+{{- /* Merge collectorsCommon with individual collector settings */ -}}
+{{- $mergedCollector := deepCopy $.Values.collectorsCommon | mustMergeOverwrite (deepCopy $collector) }}
+{{- /* Get transform configuration for this collector */ -}}
+{{- $transformConfig := dict }}
+{{- if hasKey $.Values "applicationObservability" }}
+{{- if hasKey $.Values.applicationObservability $name }}
+{{- $transformConfig = index $.Values.applicationObservability $name "transform" }}
+{{- end }}
+{{- end }}
+---
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: {{ $.Release.Name }}-{{ $name }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "otel-collectors.labels" $ | nindent 4 }}
+    component: {{ $name }}
+    type: {{ $mergedCollector.type }}
+spec:
+  image: {{ $mergedCollector.image.repository }}:{{ $mergedCollector.image.tag }}
+  {{- if gt ($mergedCollector.replicas | int) 1 }}
+  replicas: {{ $mergedCollector.replicas }}
+  {{- end }}
+  resources:
+    {{- toYaml $mergedCollector.resources | nindent 4 }}
+  
+  # Security Configuration
+  podSecurityContext:
+    {{- toYaml $.Values.security.podSecurityContext | nindent 4 }}
+  securityContext:
+    {{- toYaml $.Values.security.containerSecurityContext | nindent 4 }}
+  
+  # Host network setting
+  hostNetwork: {{ $.Values.security.advanced.hostNetwork }}
+  
+  # Pod annotations for security profiles
+  {{- if $.Values.security.advanced.annotations }}
+  podAnnotations:
+    {{- toYaml $.Values.security.advanced.annotations | nindent 4 }}
+  {{- end }}
+  
+  # Volume mounts for read-only root filesystem
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    - name: cache  
+      mountPath: /cache
+    - name: data
+      mountPath: /var/lib/otelcol
+  volumes:
+    - name: tmp
+      emptyDir:
+        sizeLimit: 100Mi
+    - name: cache
+      emptyDir:
+        sizeLimit: 100Mi  
+    - name: data
+      emptyDir:
+        sizeLimit: 1Gi
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    
+    processors:
+      {{- if has "memory_limiter" $collector.config.processors }}
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 25
+      {{- end }}
+      resourcedetection:
+        detectors: ["env", "system"]
+        timeout: 5s
+        override: false
+      
+      transform/set_standard_labels:
+        log_statements:
+          - set(resource.attributes["loki.resource.labels"], Concat(["deployment.environment", "service.name", "service.namespace", "service.instance.id", "otel_collector_environment", "cloud.platform", "cloud.datacenter"], ","))
+          - set(resource.attributes["otel_collector_environment"], "${env:COLLECTOR_ENVIRONMENT}")
+          {{- if and $transformConfig $transformConfig.logs $transformConfig.logs.enabled $transformConfig.logs.transforms.log }}
+          {{- range $transformConfig.logs.transforms.log }}
+          - {{ . }}
+          {{- end }}
+          {{- end }}
+        trace_statements:
+          - set(resource.attributes["otel_collector_environment"], "${env:COLLECTOR_ENVIRONMENT}")
+          - set(resource.attributes["k8s.cluster.name"], "${env:CLUSTER_NAME}")
+          {{- if and $transformConfig $transformConfig.traces $transformConfig.traces.enabled $transformConfig.traces.transforms.span }}
+          {{- range $transformConfig.traces.transforms.span }}
+          - {{ . }}
+          {{- end }}
+          {{- end }}
+        {{- if and $transformConfig $transformConfig.traces $transformConfig.traces.enabled $transformConfig.traces.transforms.resource }}
+        resource_statements:
+          {{- range $transformConfig.traces.transforms.resource }}
+          - {{ . }}
+          {{- end }}
+        {{- end }}
+        {{- if and $transformConfig $transformConfig.metrics $transformConfig.metrics.enabled $transformConfig.metrics.transforms.datapoint }}
+        metric_statements:
+          {{- range $transformConfig.metrics.transforms.datapoint }}
+          - {{ . }}
+          {{- end }}
+        {{- end }}
+      
+      transform/drop_unneeded_resource_attributes:
+        error_mode: ignore
+        trace_statements:
+          - context: resource
+            statements:
+              - delete_key(attributes, "k8s.pod.start_time")
+              - delete_key(attributes, "os.description")
+              - delete_key(attributes, "os.type")
+              - delete_key(attributes, "process.command_args")
+              - delete_key(attributes, "process.executable.path")
+              - delete_key(attributes, "process.pid")
+              - delete_key(attributes, "process.runtime.description")
+              - delete_key(attributes, "process.runtime.name")
+              - delete_key(attributes, "process.runtime.version")
+              - delete_key(attributes, "container.image.id")
+        metric_statements:
+          - context: resource
+            statements:
+              - delete_key(attributes, "k8s.pod.start_time")
+              - delete_key(attributes, "os.description")
+              - delete_key(attributes, "os.type")
+              - delete_key(attributes, "process.command_args")
+              - delete_key(attributes, "process.executable.path")
+              - delete_key(attributes, "process.pid")
+              - delete_key(attributes, "process.runtime.description")
+              - delete_key(attributes, "process.runtime.name")
+              - delete_key(attributes, "process.runtime.version")
+              - delete_key(attributes, "container.image.id")
+        log_statements:
+          - context: resource
+            statements:
+              - delete_key(attributes, "k8s.pod.start_time")
+              - delete_key(attributes, "os.description")
+              - delete_key(attributes, "os.type")
+              - delete_key(attributes, "process.command_args")
+              - delete_key(attributes, "process.executable.path")
+              - delete_key(attributes, "process.pid")
+              - delete_key(attributes, "process.runtime.description")
+              - delete_key(attributes, "process.runtime.name")
+              - delete_key(attributes, "process.runtime.version")
+              - delete_key(attributes, "container.image.id")
+
+      # K8s attributes extraction
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        filter:
+          node_from_env_var: KUBE_NODE_NAME
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.deployment.name
+            - k8s.statefulset.name
+            - k8s.daemonset.name
+            - k8s.node.name
+            - k8s.pod.name
+            - k8s.pod.uid
+          labels:
+            - tag_name: app.kubernetes.io/name
+              key: app.kubernetes.io/name
+              from: pod
+            - tag_name: app.kubernetes.io/version
+              key: app.kubernetes.io/version
+              from: pod
+            - tag_name: app.kubernetes.io/component
+              key: app.kubernetes.io/component  
+              from: pod
+      
+      {{- if has "batch" $mergedCollector.config.processors }}
+      batch:
+        send_batch_size: 1000
+        timeout: 10s
+      {{- end }}
+    
+    exporters:
+      loadbalancing/tailsampling:
+        routing_key: "traceID"
+        timeout: 10s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+        sending_queue:
+          enabled: true
+          num_consumers: 2
+          queue_size: 1000
+          storage: file_storage/loadbalancing
+        protocol:
+          otlp:
+            timeout: 1s
+            sending_queue:
+              enabled: true
+            tls:
+              insecure: true
+        resolver:
+          k8s:
+            service: {{ $.Release.Name }}-tailsampling-collector-headless
+            ports:
+              - 4317
+      loadbalancing/spanmetrics:
+        routing_key: "traceID"
+        timeout: 10s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+        sending_queue:
+          enabled: true
+          num_consumers: 2
+          queue_size: 1000
+          storage: file_storage/loadbalancing
+        protocol:
+          otlp:
+            timeout: 1s
+            sending_queue:
+              enabled: true
+            tls:
+              insecure: true
+        resolver:
+          k8s:
+            service: {{ $.Release.Name }}-spanmetrics-collector-headless
+            ports:
+              - 4317
+      loadbalancing/servicegraph:
+        routing_key: "traceID"
+        timeout: 10s
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+        sending_queue:
+          enabled: true
+          num_consumers: 2
+          queue_size: 1000
+          storage: file_storage/loadbalancing
+        protocol:
+          otlp:
+            timeout: 1s
+            sending_queue:
+              enabled: true
+            tls:
+              insecure: true
+        resolver:
+          k8s:
+            service: {{ $.Release.Name }}-servicegraph-collector-headless
+            ports:
+              - 4317
+    
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+      file_storage/loadbalancing:
+        directory: /var/lib/storage/loadbalancing
+        timeout: 10s
+    
+    service:
+      extensions: [health_check, file_storage/loadbalancing]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resourcedetection, k8sattributes, transform/set_standard_labels, transform/drop_unneeded_resource_attributes, batch]
+          exporters: [loadbalancing/tailsampling, loadbalancing/spanmetrics, loadbalancing/servicegraph]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, resourcedetection, k8sattributes, transform/set_standard_labels, transform/drop_unneeded_resource_attributes, batch]
+          exporters: [loadbalancing/tailsampling]
+      telemetry:
+        logs:
+          level: INFO
+
+  env:
+  - name: CLUSTER_NAME
+    value: {{ $.Values.global.clusterName }}
+  - name: COLLECTOR_ENVIRONMENT
+    value: {{ $.Values.global.environment }}
+  - name: KUBE_NODE_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
+
+  volumeMounts:
+  {{- if $mergedCollector.volumeMounts }}
+    {{- toYaml $mergedCollector.volumeMounts | nindent 2 }}
+  {{- end }}
+  - name: loadbalancing-storage
+    mountPath: /var/lib/storage/loadbalancing
+    
+  volumes:
+  {{- if $mergedCollector.volumes }}
+    {{- toYaml $mergedCollector.volumes | nindent 2 }}
+  {{- end }}
+  - name: loadbalancing-storage
+    emptyDir: {}
+
+  mode: {{ $mergedCollector.mode }}
+  serviceAccount: {{ $mergedCollector.serviceAccount }}
+{{- end }}

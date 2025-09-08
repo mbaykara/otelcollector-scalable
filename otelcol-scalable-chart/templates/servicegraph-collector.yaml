@@ -1,0 +1,195 @@
+{{- /* Servicegraph Collector Template */ -}}
+{{- include "otel-collectors.runValidations" . -}}
+{{- $name := "servicegraph" }}
+{{- $collector := index .Values.collectors $name }}
+{{- if and $collector.enabled (eq $collector.type "application") (eq $name "servicegraph") }}
+{{- /* Merge collectorsCommon with individual collector settings */ -}}
+{{- $mergedCollector := deepCopy $.Values.collectorsCommon | mustMergeOverwrite (deepCopy $collector) }}
+{{- /* Get transform configuration for this collector */ -}}
+{{- $transformConfig := dict }}
+{{- if hasKey $.Values "applicationObservability" }}
+{{- if hasKey $.Values.applicationObservability $name }}
+{{- $transformConfig = index $.Values.applicationObservability $name "transform" }}
+{{- end }}
+{{- end }}
+---
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: {{ $.Release.Name }}-{{ $name }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "otel-collectors.labels" $ | nindent 4 }}
+    component: {{ $name }}
+    type: {{ $mergedCollector.type }}
+spec:
+  image: {{ $mergedCollector.image.repository }}:{{ $mergedCollector.image.tag }}
+  {{- if gt ($mergedCollector.replicas | int) 1 }}
+  replicas: {{ $mergedCollector.replicas }}
+  {{- end }}
+  resources:
+    {{- toYaml $mergedCollector.resources | nindent 4 }}
+  
+  # Security Configuration
+  podSecurityContext:
+    {{- toYaml $.Values.security.podSecurityContext | nindent 4 }}
+  securityContext:
+    {{- toYaml $.Values.security.containerSecurityContext | nindent 4 }}
+  
+  # Host network setting
+  hostNetwork: {{ $.Values.security.advanced.hostNetwork }}
+  
+  # Pod annotations for security profiles
+  {{- if $.Values.security.advanced.annotations }}
+  podAnnotations:
+    {{- toYaml $.Values.security.advanced.annotations | nindent 4 }}
+  {{- end }}
+  
+  # Volume mounts for read-only root filesystem
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+    - name: cache  
+      mountPath: /cache
+    - name: data
+      mountPath: /var/lib/otelcol
+  volumes:
+    - name: tmp
+      emptyDir:
+        sizeLimit: 100Mi
+    - name: cache
+      emptyDir:
+        sizeLimit: 100Mi  
+    - name: data
+      emptyDir:
+        sizeLimit: 1Gi
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    
+    connectors:
+      servicegraph:
+        latency_histogram_buckets: {{ $.Values.histograms.buckets | toJson }}
+        dimensions: [cluster, namespace, service.name, service.version]
+        store:
+          ttl: 2s
+          max_items: 1000
+        cache_loop: 2m
+        store_expiration_loop: 10s
+        virtual_node_peer_attributes:
+          - db.name
+          - rpc.service
+    
+    processors:
+      {{- if has "memory_limiter" $collector.config.processors }}
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 25
+      {{- end }}
+      resource/add_collector_info:
+        attributes:
+        - key: cluster
+          value: {{ $.Values.global.clusterName }}
+          action: insert
+        - key: collector.name
+          value: "collector-{{ $name }}"
+          action: insert
+        - key: workloadName
+          value: {{ $mergedCollector.config.workloadName | quote }}
+          action: insert
+      
+      {{- if has "batch" $mergedCollector.config.processors }}
+      batch:
+        send_batch_size: 1000
+        timeout: 10s
+      {{- end }}
+    
+    exporters:
+      {{- range $destName, $dest := $.Values.otlpDestinations }}
+      {{- if $dest.enabled }}
+      otlphttp/{{ $destName }}:
+        endpoint: {{ $dest.endpoint }}
+        auth:
+          authenticator: basicauth/{{ $destName }}
+      {{- end }}
+      {{- end }}
+    
+    extensions:
+      {{- range $destName, $dest := $.Values.otlpDestinations }}
+      {{- if $dest.enabled }}
+      basicauth/{{ $destName }}:
+        client_auth:
+          username: ${env:{{ upper $destName }}_USERNAME}
+          password: ${env:{{ upper $destName }}_PASSWORD}
+      {{- end }}
+      {{- end }}
+      health_check:
+        endpoint: 0.0.0.0:13133
+    
+    service:
+      extensions: [{{- $extensions := list -}}
+      {{- range $destName, $dest := $.Values.otlpDestinations -}}
+        {{- if $dest.enabled -}}
+          {{- $extensions = append $extensions (printf "basicauth/%s" $destName) -}}
+        {{- end -}}
+      {{- end -}}
+      {{- $extensions = append $extensions "health_check" -}}
+      {{- join ", " $extensions }}]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resource/add_collector_info, batch]
+          exporters: [servicegraph]
+        metrics/servicegraph:
+          receivers: [servicegraph]
+          processors: [batch]
+          exporters: [{{- $metricExporters := list -}}
+          {{- range $destName, $dest := $.Values.otlpDestinations -}}
+            {{- if and $dest.enabled (has "metrics" $dest.signals) -}}
+              {{- $metricExporters = append $metricExporters (printf "otlphttp/%s" $destName) -}}
+            {{- end -}}
+          {{- end -}}
+          {{- join ", " $metricExporters }}]
+      telemetry:
+        logs:
+          level: INFO
+
+  env:
+  - name: CLUSTER_NAME
+    value: {{ $.Values.global.clusterName }}
+  - name: COLLECTOR_ENVIRONMENT
+    value: {{ $.Values.global.environment }}
+  {{- range $destName, $dest := $.Values.otlpDestinations }}
+  {{- if $dest.enabled }}
+  - name: {{ upper $destName }}_USERNAME
+    valueFrom:
+      secretKeyRef:
+        key: {{ $dest.usernameKey }}
+        name: {{ $dest.authSecretName }}
+  - name: {{ upper $destName }}_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        key: {{ $dest.passwordKey }}
+        name: {{ $dest.authSecretName }}
+  {{- end }}
+  {{- end }}
+
+  {{- if $mergedCollector.volumeMounts }}
+  volumeMounts:
+    {{- toYaml $mergedCollector.volumeMounts | nindent 2 }}
+  {{- end }}
+    
+  {{- if $mergedCollector.volumes }}
+  volumes:
+    {{- toYaml $mergedCollector.volumes | nindent 2 }}
+  {{- end }}
+
+  mode: {{ $mergedCollector.mode }}
+  serviceAccount: {{ $mergedCollector.serviceAccount }}
+{{- end }}

@@ -1,0 +1,11 @@
+{{- /* 
+Application Observability Collectors Template - Dispatcher
+This file is now empty as application collectors are handled by specific templates:
+
+- receiver-collector.yaml (OTLP ingestion + load balancing)
+- tailsampling-collector.yaml (Trace sampling)  
+- spanmetrics-collector.yaml (Span-to-metrics conversion with collector_id attribute)
+- servicegraph-collector.yaml (Service graph metrics)
+
+Each template handles its specific collector based on the collector name and type "application" in values.yaml
+*/ -}}
