@@ -282,8 +282,6 @@ spec:
           {{- end }}
         trace_statements:
           - set(resource.attributes["otel_collector_environment"], "${env:COLLECTOR_ENVIRONMENT}")
-          - set(resource.attributes["service.instance.id"], resource.attributes["k8s.pod.name"]) where resource.attributes["k8s.pod.name"] != nil
-          - set(resource.attributes["service.instance.id"], "MISSING_POD_NAME") where resource.attributes["k8s.pod.name"] == nil
           - set(resource.attributes["k8s.cluster.name"], "${env:CLUSTER_NAME}")
           {{- if and $transformConfig $transformConfig.traces $transformConfig.traces.enabled $transformConfig.traces.transforms.span }}
           {{- range $transformConfig.traces.transforms.span }}
@@ -372,6 +370,15 @@ spec:
               from: pod
       {{- end }}
       
+      {{- if eq $name "spanmetrics" }}
+      transform/add_collector_id_to_metrics:
+        metric_statements:
+          - context: datapoint
+            statements:
+              - set(attributes["collector_id"], resource.attributes["collector.name"]) where resource.attributes["collector.name"] != nil
+              - set(resource.attributes["service.instance.id"], resource.attributes["k8s.pod.name"]) where resource.attributes["k8s.pod.name"] != nil
+      {{- end }}
+      
       {{- if and (eq $name "spanmetrics") $transformConfig $transformConfig.traces $transformConfig.traces.enabled $transformConfig.traces.transforms.span }}
       transform/spanname_normalization:
         trace_statements:
@@ -419,7 +426,7 @@ spec:
             ports:
               - 4317
       loadbalancing/spanmetrics:
-        routing_key: "service"
+        routing_key: "traceID"
         # Loadbalancing-level resiliency for elastic environments (k8s scale events)
         timeout: 10s
         retry_on_failure:
@@ -550,7 +557,7 @@ spec:
           exporters: [spanmetrics]
         metrics/spanmetrics:
           receivers: [spanmetrics]
-          processors: [memory_limiter, resource/add_collector_info, batch]
+          processors: [memory_limiter, resource/add_collector_info, transform/add_collector_id_to_metrics, batch]
           exporters: [{{- $metricExporters := list -}}
           {{- range $destName, $dest := $.Values.otlpDestinations -}}
             {{- if and $dest.enabled (has "metrics" $dest.signals) -}}
