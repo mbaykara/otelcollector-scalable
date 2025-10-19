@@ -1,0 +1,176 @@
+# {{ .Name | title }}
+
+{{ .Description }}
+
+**Chart Version:** {{ .Version }}
+**Application Version:** {{ .AppVersion }}
+
+## Overview
+
+Scalable OpenTelemetry Collector deployment for Kubernetes with minimal defaults and opt-in advanced features.
+
+### Components
+
+**Always Enabled:**
+- **receiver**: Receives OTLP data and routes to destinations
+
+**Optional (disabled by default):**
+- **tailsampling**: Intelligent trace sampling
+- **spanmetrics**: Generate RED metrics from traces
+- **servicegraph**: Service dependency graphs
+- **cluster-metrics**: Kubernetes metrics
+- **node-metrics**: Node-level metrics
+
+## Quick Start
+
+### Prerequisites
+
+- Kubernetes 1.19+
+- Helm 3.0+
+- OpenTelemetry Operator
+
+### Installation
+
+**Option 1: Auto-create secret (development)**
+
+```bash
+helm install otel-collectors ./otel-collectors -f - <<EOF
+global:
+  clusterName: "my-cluster"
+  namespace: o11y
+
+otlpDestinations:
+  grafanaCloud:
+    enabled: true
+    endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+    createSecret: true
+    username: "your-username"
+    password: "your-password"
+    signals: ["traces", "metrics", "logs"]
+
+collectorsCommon:
+  image:
+    repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+    tag: "0.137.0"
+EOF
+```
+
+**Option 2: Use existing secret (production)**
+
+```bash
+# Create secret first
+kubectl create secret generic grafana-cloud-secret \
+  --from-literal=username='your-username' \
+  --from-literal=password='your-password' \
+  -n o11y
+
+# Install chart
+helm install otel-collectors ./otel-collectors -f - <<EOF
+global:
+  clusterName: "my-cluster"
+  namespace: o11y
+
+otlpDestinations:
+  grafanaCloud:
+    enabled: true
+    endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+    authSecretName: "grafana-cloud-secret"
+    signals: ["traces", "metrics", "logs"]
+
+collectorsCommon:
+  image:
+    repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+    tag: "0.137.0"
+EOF
+```
+
+## Configuration
+
+### Secret Management
+
+**Auto-create (development):**
+```yaml
+otlpDestinations:
+  grafanaCloud:
+    enabled: true
+    endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+    createSecret: true
+    username: "your-username"
+    password: "your-password"
+    signals: ["traces", "metrics", "logs"]
+```
+
+**Use existing (production):**
+```yaml
+otlpDestinations:
+  grafanaCloud:
+    enabled: true
+    endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+    authSecretName: "grafana-cloud-secret"  # Must have 'username' and 'password' keys
+    signals: ["traces", "metrics", "logs"]
+```
+
+### Enable Advanced Features
+
+```yaml
+collectors:
+  receiver:
+    enabled: true  # Always required
+  tailsampling:
+    enabled: true  # Trace sampling
+  spanmetrics:
+    enabled: true  # RED metrics from traces
+  servicegraph:
+    enabled: false
+  cluster-metrics:
+    enabled: false
+  node-metrics:
+    enabled: false
+```
+
+### Health Checks
+
+```yaml
+healthChecks:
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 10
+```
+
+## Troubleshooting
+
+**View logs:**
+```bash
+kubectl logs -n o11y -l component=receiver
+```
+
+**Check health:**
+```bash
+kubectl port-forward -n o11y svc/otel-collectors-receiver-collector 13133:13133
+curl http://localhost:13133/
+```
+
+## Development
+
+Generate documentation:
+```bash
+helm-docs
+```
+
+## 📄 License
+
+{{ if .Sources }}
+**Sources:** {{ range .Sources }}{{ . }} {{ end }}
+{{ end }}
+
+**Maintainers:**
+{{- range .Maintainers }}
+- {{ .Name }} ({{ .Email }})
+{{- end }}
+
+---
+
+Generated with helm-docs on {{ dateInZone "2006-01-02 15:04:05 UTC" (now) "UTC" }}

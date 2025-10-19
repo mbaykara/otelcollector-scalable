@@ -29,7 +29,17 @@ spec:
   {{- end }}
   resources:
     {{- toYaml $mergedCollector.resources | nindent 4 }}
-  
+
+  # Health Checks
+  {{- if $.Values.healthChecks.livenessProbe.enabled }}
+  livenessProbe:
+    {{- toYaml (omit $.Values.healthChecks.livenessProbe "enabled") | nindent 4 }}
+  {{- end }}
+  {{- if $.Values.healthChecks.readinessProbe.enabled }}
+  readinessProbe:
+    {{- toYaml (omit $.Values.healthChecks.readinessProbe "enabled") | nindent 4 }}
+  {{- end }}
+
   # Security Configuration
   podSecurityContext:
     {{- toYaml $.Values.security.podSecurityContext | nindent 4 }}
@@ -175,16 +185,19 @@ spec:
     value: {{ $.Values.global.environment }}
   {{- range $destName, $dest := $.Values.otlpDestinations }}
   {{- if $dest.enabled }}
+  {{- $secretName := $dest.authSecretName | default (printf "%s-secret" $destName) }}
+  {{- $usernameKey := $dest.usernameKey | default "username" }}
+  {{- $passwordKey := $dest.passwordKey | default "password" }}
   - name: {{ upper $destName }}_USERNAME
     valueFrom:
       secretKeyRef:
-        key: {{ $dest.usernameKey }}
-        name: {{ $dest.authSecretName }}
+        key: {{ $usernameKey | quote }}
+        name: {{ $secretName }}
   - name: {{ upper $destName }}_PASSWORD
     valueFrom:
       secretKeyRef:
-        key: {{ $dest.passwordKey }}
-        name: {{ $dest.authSecretName }}
+        key: {{ $passwordKey | quote }}
+        name: {{ $secretName }}
   {{- end }}
   {{- end }}
 

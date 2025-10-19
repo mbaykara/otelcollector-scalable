@@ -21,10 +21,10 @@ jobs:
 
     - name: Helm Lint
       run: |
-        cd otelcol-scalable-chart
+        cd otel-collectors
         helm lint .
 
     - name: Helm Template Test
       run: |
-        cd otelcol-scalable-chart
+        cd otel-collectors
         helm template test-release . -f ci/test-values.yaml

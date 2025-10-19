@@ -7,7 +7,6 @@ A scalable OpenTelemetry Collector Helm chart with multi-destination OTLP routin
 ✅ **Multi-Destination Support** - Send telemetry to multiple OTLP backends simultaneously  
 ✅ **Signal Routing** - Route traces, metrics, and logs to different destinations  
 ✅ **Flexible Authentication** - Per-destination authentication with Kubernetes secrets  
-✅ **Production Ready** - Built-in resiliency, load balancing, and health checks  
 ✅ **Advanced Processing** - Tail sampling, span metrics, service graphs  
 
 ## Architecture
@@ -34,9 +33,16 @@ graph TD
 ### Prerequisites
 - Kubernetes 1.28+
 - Helm 3.15+
+- [Cert Manager](https://cert-manager.io/docs/installation/)
 - [OpenTelemetry Operator](https://github.com/open-telemetry/opentelemetry-operator)
 
 ### Installation
+
+0. **Install Cert Manager **:
+
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.19.1/cert-manager.yaml
+```
 
 1. **Install OpenTelemetry Operator**:
    ```bash
@@ -53,7 +59,7 @@ graph TD
 
 3. **Deploy the chart**:
    ```bash
-   cd otelcol-scalable-chart
+   cd otel-collectors
    helm install otel-collectors . -f values.yaml -n o11y
    ```
 
@@ -67,8 +73,6 @@ otlpDestinations:
     enabled: true
     endpoint: "https://otlp-gateway.grafana.net/otlp"
     authSecretName: "grafana-auth"
-    usernameKey: "username"
-    passwordKey: "password"
     signals: ["traces", "metrics", "logs"]
     
   jaeger:

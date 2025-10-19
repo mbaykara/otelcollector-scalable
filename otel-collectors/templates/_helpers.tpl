@@ -114,6 +114,31 @@ OTel Collector allowlist regex
 {{- end }}
 
 {{/*
+Generate removelist delete statements from YAML file
+*/}}
+{{- define "otel-collectors.removelistStatements" -}}
+{{- $root := index . 0 -}}
+{{- $removelistName := index . 1 -}}
+{{- $removelistFile := printf "removelists/%s.yaml" $removelistName -}}
+{{- $content := $root.Files.Get $removelistFile -}}
+{{- if $content -}}
+{{- $removelist := $content | fromYaml -}}
+{{- if $removelist.removelist -}}
+{{- range $removelist.removelist }}
+              - delete_key(attributes, "{{ . }}")
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Receiver removelist statements
+*/}}
+{{- define "otel-collectors.receiverRemovelistStatements" -}}
+{{- include "otel-collectors.removelistStatements" (list . "receiver") -}}
+{{- end }}
+
+{{/*
 Create the name of the service account to use
 */}}
 {{- define "otel-collectors.serviceAccountName" -}}
@@ -226,4 +251,53 @@ service:
               host: 0.0.0.0
               port: 8888
 {{- end }}
+
+{{/*
+Determine receiver exporter configuration based on enabled collectors
+This helper decides where the receiver should route traces:
+- If tailsampling OR spanmetrics OR servicegraph is enabled: route traces through load balancers
+- Otherwise: export traces directly to OTLP destinations
+Metrics and logs always go directly to OTLP destinations
+*/}}
+{{- define "otel-collectors.receiverExporters" -}}
+{{- $tailsamplingEnabled := false -}}
+{{- $spanmetricsEnabled := false -}}
+{{- $servicegraphEnabled := false -}}
+
+{{- if and (index .Values.collectors "tailsampling") (index .Values.collectors "tailsampling" "enabled") -}}
+  {{- $tailsamplingEnabled = true -}}
+{{- end -}}
+{{- if and (index .Values.collectors "spanmetrics") (index .Values.collectors "spanmetrics" "enabled") -}}
+  {{- $spanmetricsEnabled = true -}}
+{{- end -}}
+{{- if and (index .Values.collectors "servicegraph") (index .Values.collectors "servicegraph" "enabled") -}}
+  {{- $servicegraphEnabled = true -}}
+{{- end -}}
+
+{{- if or $tailsamplingEnabled $spanmetricsEnabled $servicegraphEnabled -}}
+{{- /* Advanced trace processing enabled - route through load balancers */ -}}
+{{- $exporters := list -}}
+{{- if $tailsamplingEnabled -}}
+  {{- $exporters = append $exporters "loadbalancing/tailsampling" -}}
+{{- end -}}
+{{- if $spanmetricsEnabled -}}
+  {{- $exporters = append $exporters "loadbalancing/spanmetrics" -}}
+{{- end -}}
+{{- if $servicegraphEnabled -}}
+  {{- $exporters = append $exporters "loadbalancing/servicegraph" -}}
+{{- end -}}
+{{- $exporters | toJson -}}
+{{- else -}}
+{{- /* Direct export to OTLP destinations */ -}}
+{{- $exporters := list -}}
+{{- range $destName, $dest := .Values.otlpDestinations -}}
+  {{- if $dest.enabled -}}
+    {{- if has "traces" $dest.signals -}}
+      {{- $exporters = append $exporters (printf "otlphttp/%s" $destName) -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- $exporters | toJson -}}
+{{- end -}}
+{{- end -}}
 

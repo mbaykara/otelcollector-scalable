@@ -5,7 +5,7 @@
 .PHONY: help lint test docs clean install-deps upgrade template validate security-check all ci
 
 # Variables
-CHART_DIR := otelcol-scalable-chart
+CHART_DIR := otel-collectors
 TEST_VALUES := test-values.yml
 CHART_NAME := otel-collectors
 NAMESPACE := o11y

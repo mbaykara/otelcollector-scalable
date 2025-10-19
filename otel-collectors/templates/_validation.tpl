@@ -34,17 +34,21 @@ Validate OTLP Destinations configuration
   {{- if not (hasPrefix "http" $dest.endpoint) -}}
     {{- fail (printf "ERROR: otlpDestinations.%s.endpoint must use HTTP or HTTPS protocol" $destName) -}}
   {{- end -}}
-  {{- if not $dest.authSecretName -}}
-    {{- fail (printf "ERROR: otlpDestinations.%s.authSecretName is required and cannot be empty" $destName) -}}
-  {{- end -}}
-  {{- if not $dest.usernameKey -}}
-    {{- fail (printf "ERROR: otlpDestinations.%s.usernameKey is required and cannot be empty" $destName) -}}
-  {{- end -}}
-  {{- if not $dest.passwordKey -}}
-    {{- fail (printf "ERROR: otlpDestinations.%s.passwordKey is required and cannot be empty" $destName) -}}
-  {{- end -}}
   {{- if not $dest.signals -}}
     {{- fail (printf "ERROR: otlpDestinations.%s.signals is required and cannot be empty" $destName) -}}
+  {{- end -}}
+  {{- /* Validate secret configuration: either createSecret with credentials OR authSecretName */ -}}
+  {{- if $dest.createSecret -}}
+    {{- if not $dest.username -}}
+      {{- fail (printf "ERROR: otlpDestinations.%s.username is required when createSecret is true" $destName) -}}
+    {{- end -}}
+    {{- if not $dest.password -}}
+      {{- fail (printf "ERROR: otlpDestinations.%s.password is required when createSecret is true" $destName) -}}
+    {{- end -}}
+  {{- else -}}
+    {{- if not $dest.authSecretName -}}
+      {{- fail (printf "ERROR: otlpDestinations.%s.authSecretName is required when createSecret is false or not set" $destName) -}}
+    {{- end -}}
   {{- end -}}
 {{- end -}}
 {{- end -}}

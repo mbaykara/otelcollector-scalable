@@ -1,10 +1,17 @@
-{{- /* Cluster Metrics Collector Template */ -}}
+{{- /* Servicegraph Collector Template */ -}}
 {{- include "otel-collectors.runValidations" . -}}
-{{- $name := "cluster-metrics" }}
+{{- $name := "servicegraph" }}
 {{- $collector := index .Values.collectors $name }}
-{{- if and $collector.enabled (eq $collector.type "infrastructure") (eq $name "cluster-metrics") }}
+{{- if and $collector.enabled (eq $collector.type "application") (eq $name "servicegraph") }}
 {{- /* Merge collectorsCommon with individual collector settings */ -}}
 {{- $mergedCollector := deepCopy $.Values.collectorsCommon | mustMergeOverwrite (deepCopy $collector) }}
+{{- /* Get transform configuration for this collector */ -}}
+{{- $transformConfig := dict }}
+{{- if hasKey $.Values "applicationObservability" }}
+{{- if hasKey $.Values.applicationObservability $name }}
+{{- $transformConfig = index $.Values.applicationObservability $name "transform" }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
@@ -22,11 +29,17 @@ spec:
   {{- end }}
   resources:
     {{- toYaml $mergedCollector.resources | nindent 4 }}
-  {{- if has "prometheus" $mergedCollector.config.receivers }}
-  targetAllocator:
-    enabled: true
+
+  # Health Checks
+  {{- if $.Values.healthChecks.livenessProbe.enabled }}
+  livenessProbe:
+    {{- toYaml (omit $.Values.healthChecks.livenessProbe "enabled") | nindent 4 }}
   {{- end }}
-  
+  {{- if $.Values.healthChecks.readinessProbe.enabled }}
+  readinessProbe:
+    {{- toYaml (omit $.Values.healthChecks.readinessProbe "enabled") | nindent 4 }}
+  {{- end }}
+
   # Security Configuration
   podSecurityContext:
     {{- toYaml $.Values.security.podSecurityContext | nindent 4 }}
@@ -62,97 +75,25 @@ spec:
         sizeLimit: 1Gi
   config:
     receivers:
-      {{- if has "k8s_cluster" $mergedCollector.config.receivers }}
-      k8s_cluster:
-        auth_type: serviceAccount
-        collection_interval: 10s
-        node_conditions_to_report:
-          - Ready
-          - MemoryPressure
-          - DiskPressure
-          - PIDPressure
-        distribution: kubernetes
-        allocatable_types_to_report:
-          - cpu
-          - memory
-          - ephemeral-storage
-      {{- end }}
-      {{- if has "prometheus" $mergedCollector.config.receivers }}
-      prometheus:
-        config:
-          scrape_configs:
-          - job_name: 'integrations/kubernetes/cadvisor'
-            scheme: https
-            tls_config:
-              insecure_skip_verify: true
-            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-            kubernetes_sd_configs:
-            - role: node
-            relabel_configs:
-            - action: labelmap
-              regex: __meta_kubernetes_node_label_(.+)
-            - target_label: __address__
-              replacement: kubernetes.default.svc:443
-            - source_labels: [__meta_kubernetes_node_name]
-              regex: (.+)
-              target_label: __metrics_path__
-              replacement: /api/v1/nodes/$${1}/proxy/metrics/cadvisor
-            metric_relabel_configs:
-            - source_labels: [__name__]
-              action: keep
-              regex: {{ include "otel-collectors.cadvisorRegex" $ }}
-          - job_name: 'integrations/kubernetes/kubelet'
-            scheme: https
-            tls_config:
-              insecure_skip_verify: true
-            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-            kubernetes_sd_configs:
-            - role: node
-            relabel_configs:
-            - action: labelmap
-              regex: __meta_kubernetes_node_label_(.+)
-            - target_label: __address__
-              replacement: kubernetes.default.svc:443
-            - source_labels: [__meta_kubernetes_node_name]
-              regex: (.+)
-              target_label: __metrics_path__
-              replacement: /api/v1/nodes/$${1}/proxy/metrics
-            metric_relabel_configs:
-            - source_labels: [__name__]
-              action: keep
-              regex: {{ include "otel-collectors.kubeletRegex" $ }}
-          - job_name: 'integrations/kubernetes/kube-state-metrics'
-            kubernetes_sd_configs:
-            - role: service
-            relabel_configs:
-            - source_labels: [__meta_kubernetes_service_name]
-              action: keep
-              regex: .*kube-state-metrics.*
-            - source_labels: [__meta_kubernetes_service_port_name]
-              action: keep
-              regex: http
-            metric_relabel_configs:
-            - source_labels: [__name__]
-              action: keep
-              regex: {{ include "otel-collectors.kubeStateMetricsRegex" $ }}
-          - job_name: 'integrations/node_exporter'
-            kubernetes_sd_configs:
-            - role: pod
-            relabel_configs:
-            - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
-              action: keep
-              regex: nodeExporter
-            - source_labels: [__meta_kubernetes_pod_container_port_name]
-              action: keep
-              regex: metrics
-            - source_labels: [__meta_kubernetes_pod_node_name]
-              action: replace
-              target_label: instance
-            metric_relabel_configs:
-            - source_labels: [__name__]
-              action: keep
-              regex: {{ include "otel-collectors.nodeExporterRegex" $ }}
-      {{- end }}
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    
+    connectors:
+      servicegraph:
+        latency_histogram_buckets: {{ $.Values.histograms.buckets | toJson }}
+        dimensions: [cluster, namespace, service.name, service.version]
+        store:
+          ttl: 2s
+          max_items: 1000
+        cache_loop: 2m
+        store_expiration_loop: 10s
+        virtual_node_peer_attributes:
+          - db.name
+          - rpc.service
     
     processors:
       {{- if has "memory_limiter" $collector.config.processors }}
@@ -161,16 +102,18 @@ spec:
         limit_percentage: 75
         spike_limit_percentage: 25
       {{- end }}
-      {{- if has "resource" $collector.config.processors }}
-      resource:
+      resource/add_collector_info:
         attributes:
         - key: cluster
           value: {{ $.Values.global.clusterName }}
           action: insert
+        - key: collector.name
+          value: "collector-{{ $name }}"
+          action: insert
         - key: workloadName
           value: {{ $mergedCollector.config.workloadName | quote }}
           action: insert
-      {{- end }}
+      
       {{- if has "batch" $mergedCollector.config.processors }}
       batch:
         send_batch_size: 1000
@@ -209,9 +152,13 @@ spec:
       {{- $extensions = append $extensions "health_check" -}}
       {{- join ", " $extensions }}]
       pipelines:
-        metrics:
-          receivers: {{ $mergedCollector.config.receivers | toJson }}
-          processors: {{ $mergedCollector.config.processors | toJson }}
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resource/add_collector_info, batch]
+          exporters: [servicegraph]
+        metrics/servicegraph:
+          receivers: [servicegraph]
+          processors: [batch]
           exporters: [{{- $metricExporters := list -}}
           {{- range $destName, $dest := $.Values.otlpDestinations -}}
             {{- if and $dest.enabled (has "metrics" $dest.signals) -}}
@@ -228,24 +175,21 @@ spec:
     value: {{ $.Values.global.clusterName }}
   - name: COLLECTOR_ENVIRONMENT
     value: {{ $.Values.global.environment }}
-  {{- if and $mergedCollector.targetAllocator $mergedCollector.targetAllocator.enabled (has "prometheus" $mergedCollector.config.receivers) }}
-  - name: POD_NAME
-    valueFrom:
-      fieldRef:
-        fieldPath: metadata.name
-  {{- end }}
   {{- range $destName, $dest := $.Values.otlpDestinations }}
   {{- if $dest.enabled }}
+  {{- $secretName := $dest.authSecretName | default (printf "%s-secret" $destName) }}
+  {{- $usernameKey := $dest.usernameKey | default "username" }}
+  {{- $passwordKey := $dest.passwordKey | default "password" }}
   - name: {{ upper $destName }}_USERNAME
     valueFrom:
       secretKeyRef:
-        key: {{ $dest.usernameKey }}
-        name: {{ $dest.authSecretName }}
+        key: {{ $usernameKey | quote }}
+        name: {{ $secretName }}
   - name: {{ upper $destName }}_PASSWORD
     valueFrom:
       secretKeyRef:
-        key: {{ $dest.passwordKey }}
-        name: {{ $dest.authSecretName }}
+        key: {{ $passwordKey | quote }}
+        name: {{ $secretName }}
   {{- end }}
   {{- end }}
 

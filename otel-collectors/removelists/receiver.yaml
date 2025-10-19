@@ -1,0 +1,12 @@
+removelist:
+  - k8s.pod.start_time
+  - os.description
+  - os.type
+  - process.command_args
+  - process.executable.path
+  - process.pid
+  - process.runtime.description
+  - process.runtime.name
+  - process.runtime.version
+  - container.image.id
+

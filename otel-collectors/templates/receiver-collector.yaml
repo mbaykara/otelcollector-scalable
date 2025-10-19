@@ -29,7 +29,17 @@ spec:
   {{- end }}
   resources:
     {{- toYaml $mergedCollector.resources | nindent 4 }}
-  
+
+  # Health Checks
+  {{- if $.Values.healthChecks.livenessProbe.enabled }}
+  livenessProbe:
+    {{- toYaml (omit $.Values.healthChecks.livenessProbe "enabled") | nindent 4 }}
+  {{- end }}
+  {{- if $.Values.healthChecks.readinessProbe.enabled }}
+  readinessProbe:
+    {{- toYaml (omit $.Values.healthChecks.readinessProbe "enabled") | nindent 4 }}
+  {{- end }}
+
   # Security Configuration
   podSecurityContext:
     {{- toYaml $.Values.security.podSecurityContext | nindent 4 }}
@@ -119,42 +129,15 @@ spec:
         trace_statements:
           - context: resource
             statements:
-              - delete_key(attributes, "k8s.pod.start_time")
-              - delete_key(attributes, "os.description")
-              - delete_key(attributes, "os.type")
-              - delete_key(attributes, "process.command_args")
-              - delete_key(attributes, "process.executable.path")
-              - delete_key(attributes, "process.pid")
-              - delete_key(attributes, "process.runtime.description")
-              - delete_key(attributes, "process.runtime.name")
-              - delete_key(attributes, "process.runtime.version")
-              - delete_key(attributes, "container.image.id")
+{{- include "otel-collectors.receiverRemovelistStatements" . }}
         metric_statements:
           - context: resource
             statements:
-              - delete_key(attributes, "k8s.pod.start_time")
-              - delete_key(attributes, "os.description")
-              - delete_key(attributes, "os.type")
-              - delete_key(attributes, "process.command_args")
-              - delete_key(attributes, "process.executable.path")
-              - delete_key(attributes, "process.pid")
-              - delete_key(attributes, "process.runtime.description")
-              - delete_key(attributes, "process.runtime.name")
-              - delete_key(attributes, "process.runtime.version")
-              - delete_key(attributes, "container.image.id")
+{{- include "otel-collectors.receiverRemovelistStatements" . }}
         log_statements:
           - context: resource
             statements:
-              - delete_key(attributes, "k8s.pod.start_time")
-              - delete_key(attributes, "os.description")
-              - delete_key(attributes, "os.type")
-              - delete_key(attributes, "process.command_args")
-              - delete_key(attributes, "process.executable.path")
-              - delete_key(attributes, "process.pid")
-              - delete_key(attributes, "process.runtime.description")
-              - delete_key(attributes, "process.runtime.name")
-              - delete_key(attributes, "process.runtime.version")
-              - delete_key(attributes, "container.image.id")
+{{- include "otel-collectors.receiverRemovelistStatements" . }}
 
       # K8s attributes extraction
       k8sattributes:
@@ -264,8 +247,38 @@ spec:
             service: {{ $.Release.Name }}-servicegraph-collector-headless
             ports:
               - 4317
-    
+      {{- range $destName, $dest := $.Values.otlpDestinations }}
+      {{- if $dest.enabled }}
+      {{- $secretName := $dest.authSecretName | default (printf "%s-secret" $destName) }}
+      {{- $usernameKey := $dest.usernameKey | default "username" }}
+      {{- $passwordKey := $dest.passwordKey | default "password" }}
+      otlphttp/{{ $destName }}:
+        endpoint: {{ $dest.endpoint }}
+        auth:
+          authenticator: basicauth/{{ $destName }}
+        encoding: proto
+        compression: snappy
+        sending_queue:
+          enabled: true
+          num_consumers: 10
+          queue_size: 5000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 30s
+          max_elapsed_time: 300s
+      {{- end }}
+      {{- end }}
+
     extensions:
+      {{- range $destName, $dest := $.Values.otlpDestinations }}
+      {{- if $dest.enabled }}
+      basicauth/{{ $destName }}:
+        client_auth:
+          username: ${{ printf "{%s_USERNAME}" (upper $destName) }}
+          password: ${{ printf "{%s_PASSWORD}" (upper $destName) }}
+      {{- end }}
+      {{- end }}
       health_check:
         endpoint: 0.0.0.0:13133
       file_storage/loadbalancing:
@@ -273,16 +286,20 @@ spec:
         timeout: 10s
     
     service:
-      extensions: [health_check, file_storage/loadbalancing]
+      extensions: [health_check, file_storage/loadbalancing{{- range $destName, $dest := $.Values.otlpDestinations }}{{- if $dest.enabled }}, basicauth/{{ $destName }}{{- end }}{{- end }}]
       pipelines:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, resourcedetection, k8sattributes, transform/set_standard_labels, transform/drop_unneeded_resource_attributes, batch]
-          exporters: [loadbalancing/tailsampling, loadbalancing/spanmetrics, loadbalancing/servicegraph]
+          exporters: {{ include "otel-collectors.receiverExporters" $ }}
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, resourcedetection, k8sattributes, transform/set_standard_labels, transform/drop_unneeded_resource_attributes, batch]
+          exporters: [{{- range $i, $destName := keys $.Values.otlpDestinations }}{{- $dest := index $.Values.otlpDestinations $destName }}{{- if and $dest.enabled (has "metrics" $dest.signals) }}{{- if $i }}, {{ end }}otlphttp/{{ $destName }}{{- end }}{{- end }}]
         logs:
           receivers: [otlp]
           processors: [memory_limiter, resourcedetection, k8sattributes, transform/set_standard_labels, transform/drop_unneeded_resource_attributes, batch]
-          exporters: [loadbalancing/tailsampling]
+          exporters: [{{- range $i, $destName := keys $.Values.otlpDestinations }}{{- $dest := index $.Values.otlpDestinations $destName }}{{- if and $dest.enabled (has "logs" $dest.signals) }}{{- if $i }}, {{ end }}otlphttp/{{ $destName }}{{- end }}{{- end }}]
       telemetry:
         logs:
           level: INFO

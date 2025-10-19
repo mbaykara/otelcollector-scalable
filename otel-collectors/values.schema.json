@@ -51,17 +51,17 @@
             "authSecretName": {
               "type": "string",
               "pattern": "^[a-z0-9-]+$",
-              "description": "Name of Kubernetes secret containing auth credentials"
+              "description": "Name of Kubernetes secret containing auth credentials (required if createSecret is false)"
             },
             "usernameKey": {
               "type": "string",
               "minLength": 1,
-              "description": "Key in secret for username"
+              "description": "Key in secret for username (defaults to 'username')"
             },
             "passwordKey": {
               "type": "string",
               "minLength": 1,
-              "description": "Key in secret for password"
+              "description": "Key in secret for password (defaults to 'password')"
             },
             "signals": {
               "type": "array",
@@ -72,14 +72,54 @@
               "uniqueItems": true,
               "minItems": 1,
               "description": "Which telemetry signals to send to this destination"
+            },
+            "createSecret": {
+              "type": "boolean",
+              "description": "Create secret from username/password values (NOT recommended for production)"
+            },
+            "username": {
+              "type": "string",
+              "description": "Username value when createSecret is true"
+            },
+            "password": {
+              "type": "string",
+              "description": "Password value when createSecret is true"
             }
           },
-          "if": {
-            "properties": {"enabled": {"const": true}}
-          },
-          "then": {
-            "required": ["endpoint", "authSecretName", "usernameKey", "passwordKey", "signals"]
-          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {"enabled": {"const": true}}
+              },
+              "then": {
+                "required": ["endpoint", "signals"]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "enabled": {"const": true},
+                  "createSecret": {"const": true}
+                }
+              },
+              "then": {
+                "required": ["username", "password"]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "enabled": {"const": true}
+                },
+                "not": {
+                  "properties": {"createSecret": {"const": true}}
+                }
+              },
+              "then": {
+                "required": ["authSecretName"]
+              }
+            }
+          ],
           "additionalProperties": false
         }
       },

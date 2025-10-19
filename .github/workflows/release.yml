@@ -43,14 +43,14 @@ jobs:
 
     - name: Update Chart version
       run: |
-        cd otelcol-scalable-chart
+        cd otel-collectors
         # Update Chart.yaml with the new version
         sed -i "s/^version:.*/version: ${{ steps.get_version.outputs.VERSION }}/" Chart.yaml
         sed -i "s/^appVersion:.*/appVersion: ${{ steps.get_version.outputs.VERSION }}/" Chart.yaml
 
     - name: Package Helm Chart
       run: |
-        cd otelcol-scalable-chart
+        cd otel-collectors
         helm package .
 
     - name: Generate changelog
@@ -83,12 +83,12 @@ jobs:
           ## Helm Chart Installation
           
           ```bash
-          helm install otel-collectors oci://ghcr.io/${{ github.repository_owner }}/charts/otelcol-scalable-chart --version ${{ steps.get_version.outputs.VERSION }} -n o11y
+          helm install otel-collectors oci://ghcr.io/${{ github.repository_owner }}/charts/otel-collectors --version ${{ steps.get_version.outputs.VERSION }} -n o11y
           ```
           
           See [documentation](https://github.com/${{ github.repository }}/blob/main/README.md) for configuration details.
         files: |
-          otelcol-scalable-chart/*.tgz
+          otel-collectors/*.tgz
 
     - name: Login to Container Registry
       uses: docker/login-action@v3
@@ -99,6 +99,6 @@ jobs:
 
     - name: Push to OCI Registry
       run: |
-        cd otelcol-scalable-chart
+        cd otel-collectors
         CHART_NAME=$(ls *.tgz)
         helm push $CHART_NAME oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts

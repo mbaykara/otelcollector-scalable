@@ -1,17 +1,10 @@
-{{- /* Servicegraph Collector Template */ -}}
+{{- /* Node Metrics Collector Template */ -}}
 {{- include "otel-collectors.runValidations" . -}}
-{{- $name := "servicegraph" }}
+{{- $name := "node-metrics" }}
 {{- $collector := index .Values.collectors $name }}
-{{- if and $collector.enabled (eq $collector.type "application") (eq $name "servicegraph") }}
+{{- if and $collector.enabled (eq $collector.type "infrastructure") (eq $name "node-metrics") }}
 {{- /* Merge collectorsCommon with individual collector settings */ -}}
 {{- $mergedCollector := deepCopy $.Values.collectorsCommon | mustMergeOverwrite (deepCopy $collector) }}
-{{- /* Get transform configuration for this collector */ -}}
-{{- $transformConfig := dict }}
-{{- if hasKey $.Values "applicationObservability" }}
-{{- if hasKey $.Values.applicationObservability $name }}
-{{- $transformConfig = index $.Values.applicationObservability $name "transform" }}
-{{- end }}
-{{- end }}
 ---
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
@@ -29,7 +22,17 @@ spec:
   {{- end }}
   resources:
     {{- toYaml $mergedCollector.resources | nindent 4 }}
-  
+
+  # Health Checks
+  {{- if $.Values.healthChecks.livenessProbe.enabled }}
+  livenessProbe:
+    {{- toYaml (omit $.Values.healthChecks.livenessProbe "enabled") | nindent 4 }}
+  {{- end }}
+  {{- if $.Values.healthChecks.readinessProbe.enabled }}
+  readinessProbe:
+    {{- toYaml (omit $.Values.healthChecks.readinessProbe "enabled") | nindent 4 }}
+  {{- end }}
+
   # Security Configuration
   podSecurityContext:
     {{- toYaml $.Values.security.podSecurityContext | nindent 4 }}
@@ -65,25 +68,43 @@ spec:
         sizeLimit: 1Gi
   config:
     receivers:
-      otlp:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
-          http:
-            endpoint: 0.0.0.0:4318
-    
-    connectors:
-      servicegraph:
-        latency_histogram_buckets: {{ $.Values.histograms.buckets | toJson }}
-        dimensions: [cluster, namespace, service.name, service.version]
-        store:
-          ttl: 2s
-          max_items: 1000
-        cache_loop: 2m
-        store_expiration_loop: 10s
-        virtual_node_peer_attributes:
-          - db.name
-          - rpc.service
+      {{- if has "kubeletstats" $mergedCollector.config.receivers }}
+      kubeletstats:
+        collection_interval: 20s
+        auth_type: serviceAccount
+        endpoint: ${env:K8S_NODE_NAME}:10250
+        insecure_skip_verify: true
+        extra_metadata_labels:
+          - container.id
+          - k8s.volume.type
+        metric_groups:
+          - container
+          - pod
+          - node
+          - volume
+      {{- end }}
+      {{- if has "prometheus" $mergedCollector.config.receivers }}
+      prometheus:
+        config:
+          scrape_configs:
+          - job_name: 'integrations/node_exporter'
+            kubernetes_sd_configs:
+            - role: pod
+            relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+              action: keep
+              regex: nodeExporter
+            - source_labels: [__meta_kubernetes_pod_container_port_name]
+              action: keep
+              regex: metrics
+            - source_labels: [__meta_kubernetes_pod_node_name]
+              action: replace
+              target_label: instance
+            metric_relabel_configs:
+            - source_labels: [__name__]
+              action: keep
+              regex: {{ include "otel-collectors.nodeExporterRegex" $ }}
+      {{- end }}
     
     processors:
       {{- if has "memory_limiter" $collector.config.processors }}
@@ -92,18 +113,24 @@ spec:
         limit_percentage: 75
         spike_limit_percentage: 25
       {{- end }}
-      resource/add_collector_info:
+      {{- if has "filter/kubeletstats_allowlist" $mergedCollector.config.processors }}
+      filter/kubeletstats_allowlist:
+        metrics:
+          include:
+            match_type: regexp
+            metric_names:
+            - "{{ include "otel-collectors.kubeletstatsRegex" $ }}"
+      {{- end }}
+      {{- if has "resource" $collector.config.processors }}
+      resource:
         attributes:
         - key: cluster
           value: {{ $.Values.global.clusterName }}
           action: insert
-        - key: collector.name
-          value: "collector-{{ $name }}"
-          action: insert
         - key: workloadName
           value: {{ $mergedCollector.config.workloadName | quote }}
           action: insert
-      
+      {{- end }}
       {{- if has "batch" $mergedCollector.config.processors }}
       batch:
         send_batch_size: 1000
@@ -142,13 +169,9 @@ spec:
       {{- $extensions = append $extensions "health_check" -}}
       {{- join ", " $extensions }}]
       pipelines:
-        traces:
-          receivers: [otlp]
-          processors: [memory_limiter, resource/add_collector_info, batch]
-          exporters: [servicegraph]
-        metrics/servicegraph:
-          receivers: [servicegraph]
-          processors: [batch]
+        metrics:
+          receivers: {{ $mergedCollector.config.receivers | toJson }}
+          processors: {{ $mergedCollector.config.processors | toJson }}
           exporters: [{{- $metricExporters := list -}}
           {{- range $destName, $dest := $.Values.otlpDestinations -}}
             {{- if and $dest.enabled (has "metrics" $dest.signals) -}}
@@ -165,30 +188,49 @@ spec:
     value: {{ $.Values.global.clusterName }}
   - name: COLLECTOR_ENVIRONMENT
     value: {{ $.Values.global.environment }}
+  - name: K8S_NODE_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
   {{- range $destName, $dest := $.Values.otlpDestinations }}
   {{- if $dest.enabled }}
+  {{- $secretName := $dest.authSecretName | default (printf "%s-secret" $destName) }}
+  {{- $usernameKey := $dest.usernameKey | default "username" }}
+  {{- $passwordKey := $dest.passwordKey | default "password" }}
   - name: {{ upper $destName }}_USERNAME
     valueFrom:
       secretKeyRef:
-        key: {{ $dest.usernameKey }}
-        name: {{ $dest.authSecretName }}
+        key: {{ $usernameKey | quote }}
+        name: {{ $secretName }}
   - name: {{ upper $destName }}_PASSWORD
     valueFrom:
       secretKeyRef:
-        key: {{ $dest.passwordKey }}
-        name: {{ $dest.authSecretName }}
+        key: {{ $passwordKey | quote }}
+        name: {{ $secretName }}
   {{- end }}
   {{- end }}
 
-  {{- if $mergedCollector.volumeMounts }}
   volumeMounts:
+  {{- if $mergedCollector.volumeMounts }}
     {{- toYaml $mergedCollector.volumeMounts | nindent 2 }}
   {{- end }}
+  - name: proc
+    mountPath: /host/proc
+    readOnly: true
+  - name: sys
+    mountPath: /host/sys
+    readOnly: true
     
-  {{- if $mergedCollector.volumes }}
   volumes:
+  {{- if $mergedCollector.volumes }}
     {{- toYaml $mergedCollector.volumes | nindent 2 }}
   {{- end }}
+  - name: proc
+    hostPath:
+      path: /proc
+  - name: sys
+    hostPath:
+      path: /sys
 
   mode: {{ $mergedCollector.mode }}
   serviceAccount: {{ $mergedCollector.serviceAccount }}

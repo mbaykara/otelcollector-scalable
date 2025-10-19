@@ -6,6 +6,27 @@ global:
   environment: "production"
   namespace: o11y
 
+## Health Check Probes Configuration
+healthChecks:
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /
+      port: 13133
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /
+      port: 13133
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
 ## Multiple OTLP Destinations Configuration
 ## Each destination can handle traces, metrics, and/or logs via OTLP protocol
 otlpDestinations:
@@ -13,9 +34,13 @@ otlpDestinations:
   grafanaCloud:
     enabled: true
     endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
-    authSecretName: "grafana-cloud-secret"
-    usernameKey: "username" 
-    passwordKey: "password"
+    # Secret configuration - choose one of two options:
+    # Option 1: Use existing secret (recommended for production)
+    authSecretName: "grafana-cloud-secret"  # Name of existing secret (required if createSecret is false)
+    # Option 2: Create secret from values (NOT recommended for production)
+    createSecret: false  # Set to true to create secret from username/password below
+    username: ""  # Only used if createSecret is true
+    password: ""  # Only used if createSecret is true
     signals: ["traces", "metrics", "logs"]  # Which signals to send to this destination
     
   # Additional OTLP destinations can be added here
@@ -50,7 +75,7 @@ grafanaCloud:
 collectorsCommon:
   image:
     repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
-    tag: "0.133.0"
+    tag: "0.138.0"
   resources:
     limits:
       memory: 1Gi
@@ -242,10 +267,10 @@ collectors:
       workloadName: "receiver"
       receivers: ["otlp", "filelog"]
       processors: ["memory_limiter", "k8sattributes", "resource", "batch"]
-      exporters: ["loadbalancing", "loadbalancing/spanmetrics", "loadbalancing/servicegraph"]
+      exporters: ["otlphttp"]  # Direct export to OTLP destinations
 
   tailsampling:
-    enabled: true
+    enabled: false  # Optional: Enable for advanced trace sampling
     type: application
     replicas: 2
     mode: statefulset
@@ -265,14 +290,11 @@ collectors:
       exporters: ["otlphttp/grafanacloud"]
 
   spanmetrics:
-    enabled: true
+    enabled: false  # Optional: Enable to generate RED metrics from spans
     type: application
     replicas: 2
     mode: statefulset
     serviceAccount: otel-collector
-    image: 
-      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
-      tag: "0.133.0"
     resources:
       limits:
         memory: 8Gi
@@ -287,14 +309,11 @@ collectors:
       exporters: ["otlphttp/grafanacloud"]
 
   servicegraph:
-    enabled: true
+    enabled: false  # Optional: Enable to generate service dependency graphs
     type: application
     replicas: 2
     mode: statefulset
     serviceAccount: otel-collector
-    image: 
-      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
-      tag: "0.133.0"
     resources:
       limits:
         memory: 8Gi
@@ -310,7 +329,7 @@ collectors:
 
   # Infrastructure Observability Collectors
   cluster-metrics:
-    enabled: true
+    enabled: false  # Optional: Enable to collect Kubernetes cluster metrics
     type: infrastructure
     replicas: 3
     mode: statefulset
@@ -330,14 +349,11 @@ collectors:
       exporters: ["otlphttp/grafanacloud"]
 
   node-metrics:
-    enabled: true
+    enabled: false  # Optional: Enable to collect node-level metrics
     type: infrastructure
     replicas: 1
     mode: daemonset
     serviceAccount: otel-collector
-    image: 
-      repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
-      tag: "0.133.0"
     resources:
       limits:
         memory: 256Mi

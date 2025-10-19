@@ -1,9 +1,9 @@
-# {{ .Name | title }}
+# Otel-Collectors
 
-{{ .Description }}
+OpenTelemetry Collector stack for Kubernetes observability with Grafana Cloud
 
-**Chart Version:** {{ .Version }}  
-**Application Version:** {{ .AppVersion }}
+**Chart Version:** 1.0.0-rc4 
+**Application Version:** 0.133.0
 
 ## Overview
 
@@ -19,7 +19,7 @@ The chart implements a **multi-tier collector architecture** optimized for high-
 - **spanmetrics**: Trace-to-metrics conversion (statefulset for aggregation)
 - **servicegraph**: Service topology generation (statefulset for state management)
 
-#### Infrastructure Observability Collectors  
+#### Infrastructure Observability Collectors 
 - **cluster-metrics**: Kubernetes cluster-level metrics (statefulset with target allocator)
 - **node-metrics**: Node-level system metrics (daemonset for per-node collection)
 
@@ -86,7 +86,7 @@ The chart implements **Pod Security Standards "restricted" level** with comprehe
 security:
   podSecurityContext:
     runAsUser: 65534              # Nobody user (non-root)
-    runAsGroup: 65534             # Nobody group  
+    runAsGroup: 65534             # Nobody group 
     runAsNonRoot: true            # Enforce non-root execution
     fsGroup: 65534                # File system group ownership
     fsGroupChangePolicy: "OnRootMismatch"  # Efficient group changes
@@ -123,7 +123,7 @@ security:
 - **Resources**: 512Mi memory, 500m CPU limits
 
 **Tail Sampling Collector:**
-- **Type**: application, **Mode**: statefulset  
+- **Type**: application, **Mode**: statefulset 
 - **Purpose**: Intelligent trace sampling with configurable policies
 - **Resources**: 8Gi memory, 2 CPU for high-throughput processing
 
@@ -165,7 +165,7 @@ Health monitoring is **enabled** with production-ready settings:
 
 The chart includes optimized allowlists for:
 - **cAdvisor**: Container metrics
-- **Kubelet**: Node and pod metrics  
+- **Kubelet**: Node and pod metrics 
 - **Kube-State-Metrics**: Kubernetes object state
 - **Node Exporter**: System-level metrics
 - **Kubeletstats**: Kubelet statistics
@@ -193,13 +193,13 @@ applicationObservability:
           type: status_code
           status_code:
             status_codes: [ERROR, UNSET]
-        
+       
         # Sample slow requests (>2s)
         - name: latency-policy
           type: latency
           latency:
             threshold_ms: 2000
-        
+       
         # Probabilistic sampling for normal traces
         - name: probabilistic-policy
           type: probabilistic
@@ -236,7 +236,7 @@ collectors:
       requests:
         memory: 1Gi
         cpu: 500m
-  
+ 
   tailsampling:
     replicas: 3        # Scale for decision processing
     resources:
@@ -307,7 +307,7 @@ collectors:
       limits:
         memory: 2Gi
         cpu: 1
-  
+ 
   tailsampling:
     replicas: 5
     resources:
@@ -380,15 +380,9 @@ make kind-test
 
 ## 📄 License
 
-{{ if .Sources }}
-**Sources:** {{ range .Sources }}{{ . }} {{ end }}
-{{ end }}
-
 **Maintainers:**
-{{- range .Maintainers }}
-- {{ .Name }} ({{ .Email }})
-{{- end }}
+- Mehmet Ali Baykara (mehmetalibaykara@gmail.com)
 
 ---
 
-Generated with helm-docs on {{ dateInZone "2006-01-02 15:04:05 UTC" (now) "UTC" }}
+Generated with helm-docs on 2025-10-19 22:17:03 UTC

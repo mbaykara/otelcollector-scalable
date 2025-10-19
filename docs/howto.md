@@ -51,7 +51,7 @@ otlpDestinations:
   # Metrics to Prometheus
   prometheus:
     enabled: true
-    endpoint: "http://prometheus:3100/otlp/v1/write"
+    endpoint: "http://prometheus:9090/otlp/v1/write"
     authSecretName: "prometheus-auth"
     signals: ["metrics"]
     
